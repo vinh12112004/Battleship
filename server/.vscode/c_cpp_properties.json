@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Win64",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/msys64/mingw64/include/mongoc-2.1.0",
+                "C:/msys64/mingw64/include/bson-2.1.0",
+                "C:/msys64/mingw64/include"
+            ],
+            "defines": [],
+            "compilerPath": "C:/msys64/mingw64/bin/gcc.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64"
+        }
+    ],
+    "version": 4
+}
