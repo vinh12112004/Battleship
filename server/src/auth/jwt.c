@@ -6,125 +6,144 @@
 #include <time.h>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
+#include <openssl/buffer.h>
+#include <cjson/cJSON.h>
+#include <stdbool.h>
 
-// Base64 URL encoding helper
-static char* base64url_encode(const unsigned char *input, size_t length) {
-    static const char base64_chars[] = 
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    
-    size_t output_length = 4 * ((length + 2) / 3);
-    char *output = (char*)malloc(output_length + 1);
-    if (!output) return NULL;
-    
-    size_t i, j;
-    for (i = 0, j = 0; i < length;) {
-        uint32_t octet_a = i < length ? input[i++] : 0;
-        uint32_t octet_b = i < length ? input[i++] : 0;
-        uint32_t octet_c = i < length ? input[i++] : 0;
-        uint32_t triple = (octet_a << 16) + (octet_b << 8) + octet_c;
-        
-        output[j++] = base64_chars[(triple >> 18) & 0x3F];
-        output[j++] = base64_chars[(triple >> 12) & 0x3F];
-        output[j++] = base64_chars[(triple >> 6) & 0x3F];
-        output[j++] = base64_chars[triple & 0x3F];
+// ===== Base64 URL Encode =====
+static char* base64url_encode(const unsigned char *input, size_t len) {
+    BIO *b64 = BIO_new(BIO_f_base64());
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+    BIO *bmem = BIO_new(BIO_s_mem());
+    b64 = BIO_push(b64, bmem);
+    BIO_write(b64, input, len);
+    BIO_flush(b64);
+
+    BUF_MEM *bptr;
+    BIO_get_mem_ptr(b64, &bptr);
+
+    char *buff = malloc(bptr->length + 1);
+    memcpy(buff, bptr->data, bptr->length);
+    buff[bptr->length] = '\0';
+
+    // URL safe
+    for (size_t i = 0; i < bptr->length; i++) {
+        if (buff[i] == '+') buff[i] = '-';
+        else if (buff[i] == '/') buff[i] = '_';
     }
-    
-    // Remove padding
-    while (j > 0 && output[j - 1] == 'A') j--;
-    output[j] = '\0';
-    
-    return output;
+    // remove padding
+    size_t len_url = bptr->length;
+    while (len_url > 0 && buff[len_url - 1] == '=') len_url--;
+    buff[len_url] = '\0';
+
+    BIO_free_all(b64);
+    return buff;
 }
 
-char* jwt_generate(const char *user_id) {
-    if (!user_id) {
-        log_error("Cannot generate token for NULL user_id");
-        return NULL;
+// ===== Base64 URL Decode =====
+static unsigned char* base64url_decode(const char *input, size_t *out_len) {
+    size_t len = strlen(input);
+    size_t padded_len = len + (4 - len % 4) % 4;
+    char *tmp = malloc(padded_len + 1);
+    strcpy(tmp, input);
+    for (size_t i = 0; i < len; i++) {
+        if (tmp[i] == '-') tmp[i] = '+';
+        else if (tmp[i] == '_') tmp[i] = '/';
     }
-    
+    for (size_t i = len; i < padded_len; i++) tmp[i] = '=';
+    tmp[padded_len] = '\0';
+
+    BIO *b64 = BIO_new(BIO_f_base64());
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+    BIO *bmem = BIO_new_mem_buf(tmp, padded_len);
+    bmem = BIO_push(b64, bmem);
+
+    unsigned char *out = malloc(padded_len);
+    int decoded_len = BIO_read(bmem, out, padded_len);
+    if (decoded_len < 0) { free(out); out = NULL; }
+    else *out_len = decoded_len;
+
+    BIO_free_all(bmem);
+    free(tmp);
+    return out;
+}
+
+// ===== JWT Generate =====
+char* jwt_generate(const char *user_id) {
+    if (!user_id) return NULL;
     time_t now = time(NULL);
     time_t exp = now + get_jwt_expiry();
-    
-    // Create header
-    char header[] = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
-    
-    // Create payload
+
+    const char *header = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
     char payload[512];
-    snprintf(payload, sizeof(payload),
-        "{\"user_id\":\"%s\",\"iat\":%ld,\"exp\":%ld}",
-        user_id, (long)now, (long)exp);
-    
-    // Base64 encode header and payload
-    char *encoded_header = base64url_encode(
-        (unsigned char*)header, strlen(header));
-    char *encoded_payload = base64url_encode(
-        (unsigned char*)payload, strlen(payload));
-    
-    if (!encoded_header || !encoded_payload) {
-        free(encoded_header);
-        free(encoded_payload);
-        return NULL;
-    }
-    
-    // Create signature input
-    char signature_input[1024];
-    snprintf(signature_input, sizeof(signature_input),
-        "%s.%s", encoded_header, encoded_payload);
-    
-    // Generate HMAC SHA256 signature
-    unsigned char signature[EVP_MAX_MD_SIZE];
-    unsigned int signature_len;
-    
+    snprintf(payload, sizeof(payload), "{\"user_id\":\"%s\",\"iat\":%ld,\"exp\":%ld}", user_id, (long)now, (long)exp);
+
+    char *enc_header = base64url_encode((unsigned char*)header, strlen(header));
+    char *enc_payload = base64url_encode((unsigned char*)payload, strlen(payload));
+
+    size_t sig_input_len = strlen(enc_header) + 1 + strlen(enc_payload);
+    char *sig_input = malloc(sig_input_len + 1);
+    sprintf(sig_input, "%s.%s", enc_header, enc_payload);
+
+    unsigned char sig[EVP_MAX_MD_SIZE];
+    unsigned int sig_len;
     HMAC(EVP_sha256(), get_jwt_secret(), strlen(get_jwt_secret()),
-         (unsigned char*)signature_input, strlen(signature_input),
-         signature, &signature_len);
-    
-    // Base64 encode signature
-    char *encoded_signature = base64url_encode(signature, signature_len);
-    
-    // Combine all parts
-    char *token = (char*)malloc(2048);
-    snprintf(token, 2048, "%s.%s.%s",
-        encoded_header, encoded_payload, encoded_signature);
-    
-    free(encoded_header);
-    free(encoded_payload);
-    free(encoded_signature);
-    
-    log_info("Generated JWT token for user: %s", user_id);
+         (unsigned char*)sig_input, strlen(sig_input),
+         sig, &sig_len);
+    free(sig_input);
+
+    char *enc_sig = base64url_encode(sig, sig_len);
+
+    size_t token_len = strlen(enc_header) + 1 + strlen(enc_payload) + 1 + strlen(enc_sig) + 1;
+    char *token = malloc(token_len);
+    sprintf(token, "%s.%s.%s", enc_header, enc_payload, enc_sig);
+
+    free(enc_header); free(enc_payload); free(enc_sig);
+    log_info("Generated JWT for user: %s", user_id);
     return token;
 }
 
+// ===== JWT Verify =====
 char* jwt_verify(const char *token) {
-    if (!token) {
-        log_error("Cannot verify NULL token");
-        return NULL;
-    }
-    
-    // Parse token parts (simplified - needs proper implementation)
-    char *token_copy = _strdup(token);
-    char *header = strtok(token_copy, ".");
-    char *payload = strtok(NULL, ".");
-    char *signature = strtok(NULL, ".");
-    
-    if (!header || !payload || !signature) {
-        free(token_copy);
-        return NULL;
-    }
-    
-    // TODO: Verify signature
-    // TODO: Decode payload
-    // TODO: Check expiration
-    // TODO: Extract user_id
-    
-    // Simplified: just return a dummy user_id for now
-    char *user_id = _strdup("dummy_user_id");
-    
-    free(token_copy);
-    return user_id;
-}
+    if (!token) return NULL;
+    char *tok_copy = _strdup(token);
 
-bool jwt_is_expired(const char *token) {
-    // TODO: Implement proper expiration check
-    return false;
+    char *header = strtok(tok_copy, ".");
+    char *payload = strtok(NULL, ".");
+    char *sig = strtok(NULL, ".");
+    if (!header || !payload || !sig) { free(tok_copy); return NULL; }
+
+    size_t sig_input_len = strlen(header) + 1 + strlen(payload);
+    char *sig_input = malloc(sig_input_len + 1);
+    sprintf(sig_input, "%s.%s", header, payload);
+
+    unsigned char expected[EVP_MAX_MD_SIZE];
+    unsigned int expected_len;
+    HMAC(EVP_sha256(), get_jwt_secret(), strlen(get_jwt_secret()),
+         (unsigned char*)sig_input, strlen(sig_input),
+         expected, &expected_len);
+    free(sig_input);
+
+    size_t sig_dec_len;
+    unsigned char *sig_dec = base64url_decode(sig, &sig_dec_len);
+    if (!sig_dec || sig_dec_len != expected_len || memcmp(sig_dec, expected, expected_len) != 0) {
+        free(sig_dec); free(tok_copy); return NULL;
+    }
+    free(sig_dec);
+
+    size_t payload_dec_len;
+    unsigned char *payload_dec = base64url_decode(payload, &payload_dec_len);
+    if (!payload_dec) { free(tok_copy); return NULL; }
+    payload_dec[payload_dec_len] = '\0';
+
+    cJSON *json = cJSON_Parse((char*)payload_dec);
+    free(payload_dec); free(tok_copy);
+    if (!json) return NULL;
+
+    cJSON *user_id_json = cJSON_GetObjectItem(json, "user_id");
+    if (!user_id_json || !cJSON_IsString(user_id_json)) { cJSON_Delete(json); return NULL; }
+
+    char *user_id = _strdup(user_id_json->valuestring);
+    cJSON_Delete(json);
+    return user_id;
 }

@@ -2,6 +2,8 @@
 #define PASSWORD_H
 
 #include <stdbool.h>
+#include <stddef.h>
+
 
 #define PASSWORD_HASH_LENGTH 61
 

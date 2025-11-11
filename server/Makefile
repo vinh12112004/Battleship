@@ -1,48 +1,57 @@
+# Makefile cho MSYS2 MinGW 64-bit
+
 CC = gcc
-CFLAGS = -Wall -Wextra -I./include `pkg-config --cflags libmongoc-1.0`
-LDFLAGS = `pkg-config --libs libmongoc-1.0` -lssl -lcrypto -lws2_32
 
-SRC_DIR = src
-BUILD_DIR = build
-OBJ_DIR = $(BUILD_DIR)/obj
+# Compile flags
+CFLAGS = -Iinclude \
+         -Isrc \
+         -I"C:/msys64/mingw64/include/mongoc-2.1.0" \
+         -I"C:/msys64/mingw64/include/bson-2.1.0" \
+         -I"C:/msys64/mingw64/include" \
+         -Wall -Wextra -g
 
+# Link flags
+LIBS = -L"C:/msys64/mingw64/lib" \
+       -lmongoc2 -lbson2 -lssl -lcrypto -lcjson \
+       -lws2_32 -lshlwapi -lDnsapi -lcrypt32 -lzstd
+
+# ------------------------
 # Source files
-SOURCES = $(wildcard $(SRC_DIR)/*.c) \
-          $(wildcard $(SRC_DIR)/auth/*.c) \
-          $(wildcard $(SRC_DIR)/database/*.c) \
-          $(wildcard $(SRC_DIR)/utils/*.c)
+# ------------------------
 
-# Object files
-OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+# Server
+SERVER_SRC = src/main.c \
+             src/auth/*.c \
+             src/database/*.c \
+             src/game/*.c \
+             src/matchmaking/*.c \
+             src/network/*.c \
+             src/utils/*.c \
 
-# Executable
-TARGET = $(BUILD_DIR)/battleship_server.exe
+# Test client
+TEST_SRC = src/test/test_client.c \
+           src/auth/*.c \
+           src/database/*.c \
+           src/network/*.c \
+           src/game/*.c \
+           src/matchmaking/*.c \
+           src/utils/*.c \
 
-# Default target
-all: $(TARGET)
+# Output executables
+SERVER_OUT = server.exe
+TEST_OUT   = test_client.exe
 
-# Create directories
-$(OBJ_DIR):
-	@if not exist "$(BUILD_DIR)" mkdir "$(BUILD_DIR)"
-	@if not exist "$(OBJ_DIR)" mkdir "$(OBJ_DIR)"
-	@if not exist "$(OBJ_DIR)\auth" mkdir "$(OBJ_DIR)\auth"
-	@if not exist "$(OBJ_DIR)\database" mkdir "$(OBJ_DIR)\database"
-	@if not exist "$(OBJ_DIR)\utils" mkdir "$(OBJ_DIR)\utils"
+# ------------------------
+# Targets
+# ------------------------
 
-# Compile source files
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+all: server test_client
 
-# Link
-$(TARGET): $(OBJECTS)
-	$(CC) $(OBJECTS) -o $@ $(LDFLAGS)
+server: $(SERVER_SRC)
+	$(CC) $(CFLAGS) $(SERVER_SRC) -o $(SERVER_OUT) $(LIBS)
 
-# Clean
+test_client: $(TEST_SRC)
+	$(CC) $(CFLAGS) $(TEST_SRC) -o $(TEST_OUT) $(LIBS)
+
 clean:
-	@if exist "$(BUILD_DIR)" rmdir /s /q "$(BUILD_DIR)"
-
-# Run
-run: $(TARGET)
-	$(TARGET)
-
-.PHONY: all clean run
+	rm -f $(SERVER_OUT) $(TEST_OUT)
