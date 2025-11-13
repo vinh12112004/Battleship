@@ -63,7 +63,7 @@ user_t* user_create(const char *username, const char *email, const char *passwor
     
     user_t *user = NULL;
     if (success) {
-        user = (user_t*)malloc(sizeof(user_t));
+        user = (user_t*)calloc(1, sizeof(user_t)); 
         if (user) {
             char oid_str[25];
             bson_oid_to_string(&oid, oid_str);

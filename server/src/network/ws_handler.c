@@ -37,8 +37,46 @@ void handle_message(int client_sock, message_t *msg) {
 }
 
 void handle_register(int client_sock, auth_payload *auth) {
+    if (!auth || !auth->username[0] || !auth->password[0]) {
+        log_warn("Invalid registration payload from client %d", client_sock);
+        return;
+    }
+
     log_info("Processing registration for username: %s", auth->username);
-    // Gọi auth module, trả auth_success / auth_failed
+
+    // Gọi auth module để đăng ký
+    auth_result_t *res = auth_register(auth->username, auth->username, auth->password);
+    if (!res) {
+        log_error("auth_register returned NULL for client %d", client_sock);
+        return;
+    }
+
+    // Tạo response
+    message_t resp;
+
+    if (res->success) {
+        resp.type = MSG_AUTH_SUCCESS;
+        strncpy(resp.payload.auth_suc.token, res->token, MAX_JWT_LEN - 1);
+        resp.payload.auth_suc.token[MAX_JWT_LEN - 1] = '\0';
+        strncpy(resp.payload.auth_suc.username, res->user->username, 31);
+        resp.payload.auth_suc.username[31] = '\0';
+        log_info("Registration successful for %s", auth->username);
+    } else {
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, res->error_message, 63);
+        resp.payload.auth_fail.reason[63] = '\0';
+        log_warn("Registration failed for client %d: %s", client_sock, res->error_message);
+    }
+
+    // Gửi message về client
+    ssize_t sent = send_message((SOCKET)client_sock, &resp);
+    if (sent <= 0) {
+        log_error("Failed to send registration response to client %d", client_sock);
+    }
+
+    log_debug("About to free auth_result for client %d", client_sock);
+    auth_result_free(res);
+    log_debug("auth_result freed successfully for client %d", client_sock);
 }
 
 void handle_login(int client_sock, auth_payload *auth) {
