@@ -18,7 +18,8 @@ typedef enum {
     MSG_PLAYER_MOVE,
     MSG_MOVE_RESULT,
     MSG_GAME_OVER,
-    MSG_CHAT
+    MSG_CHAT,
+    MSG_LOGOUT
 } msg_type;
 
 // 2. Payload structs
@@ -29,6 +30,8 @@ typedef struct { int x; int y; } move_payload;
 typedef struct { int x; int y; int hit; char sunk[32]; } move_result_payload;
 typedef struct { char opponent[32]; } start_game_payload;
 typedef struct { char message[128]; } chat_payload;
+typedef struct { char token[MAX_JWT_LEN]; } logout_payload;
+
 
 // 3. Wrapper message
 typedef struct {
@@ -41,6 +44,7 @@ typedef struct {
         move_result_payload move_res;
         start_game_payload start_game;
         chat_payload chat;
+        logout_payload logout;
     } payload;
 } message_t;
 

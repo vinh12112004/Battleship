@@ -1,14 +1,13 @@
 #include "network/ws_server.h"
 #include "network/ws_protocol.h"
 #include "network/ws_handler.h"
+#include "utils/logger.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 #include <winsock2.h>
-
-#pragma comment(lib, "ws2_32.lib")
 
 #define MAX_CLIENTS 100
 
@@ -17,19 +16,32 @@ DWORD WINAPI client_thread(LPVOID arg) {
     SOCKET client_sock = (SOCKET)(intptr_t)arg;
     message_t msg;
 
-    printf("Client connected: %llu\n", (unsigned long long)client_sock);
+    log_info("Client connected: socket=%llu", (unsigned long long)client_sock);
 
     while (1) {
+        log_debug("Waiting for message from client %llu...", (unsigned long long)client_sock);
+        
         int n = recv_message(client_sock, &msg);
-        if (n <= 0) {
-            printf("Client disconnected: %llu\n", (unsigned long long)client_sock);
+        
+        if (n == 0) {
+            log_info("Client %llu closed connection gracefully", (unsigned long long)client_sock);
+            break;
+        }
+        
+        if (n < 0) {
+            log_error("recv_message error for client %llu: %d", (unsigned long long)client_sock, WSAGetLastError());
             break;
         }
 
+        log_info("Received message type=%d from client %llu", msg.type, (unsigned long long)client_sock);
+
         // Xử lý message
         handle_message((int)client_sock, &msg);
+        
+        log_info("Message handled successfully for client %llu, waiting for next message...", (unsigned long long)client_sock);
     }
 
+    log_info("Client %llu disconnected", (unsigned long long)client_sock);
     closesocket(client_sock);
     return 0;
 }
@@ -38,13 +50,13 @@ DWORD WINAPI client_thread(LPVOID arg) {
 int setup_ws_server(uint16_t port) {
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2,2), &wsa) != 0) {
-        printf("WSAStartup failed\n");
+        log_error("WSAStartup failed");
         return -1;
     }
 
     SOCKET server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server_sock == INVALID_SOCKET) {
-        printf("Socket creation failed\n");
+        log_error("Socket creation failed");
         WSACleanup();
         return -1;
     }
@@ -58,20 +70,20 @@ int setup_ws_server(uint16_t port) {
     server_addr.sin_port = htons(port);
 
     if (bind(server_sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
-        printf("Bind failed\n");
+        log_error("Bind failed: %d", WSAGetLastError());
         closesocket(server_sock);
         WSACleanup();
         return -1;
     }
 
     if (listen(server_sock, MAX_CLIENTS) == SOCKET_ERROR) {
-        printf("Listen failed\n");
+        log_error("Listen failed: %d", WSAGetLastError());
         closesocket(server_sock);
         WSACleanup();
         return -1;
     }
 
-    printf("Server listening on port %d\n", port);
+    log_info("Server listening on port %d", port);
     return (int)server_sock;
 }
 
@@ -80,21 +92,38 @@ void start_ws_server(uint16_t port) {
     SOCKET server_sock = (SOCKET)setup_ws_server(port);
     if (server_sock == INVALID_SOCKET) return;
 
+    log_info("Server ready to accept connections");
+
     while (1) {
         struct sockaddr_in client_addr;
         int addr_len = sizeof(client_addr);
+        
+        log_debug("Waiting for new client connection...");
         SOCKET client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
+        
         if (client_sock == INVALID_SOCKET) {
-            printf("Accept failed\n");
+            log_error("Accept failed: %d", WSAGetLastError());
             continue;
         }
+
+        log_info("New connection accepted from %s:%d", 
+                 inet_ntoa(client_addr.sin_addr), 
+                 ntohs(client_addr.sin_port));
 
         // Tạo thread cho client
         DWORD tid;
         HANDLE hThread = CreateThread(NULL, 0, client_thread, (LPVOID)(intptr_t)client_sock, 0, &tid);
-        if (hThread) CloseHandle(hThread);
+        if (hThread) {
+            log_debug("Thread created for client socket=%llu, tid=%lu", 
+                     (unsigned long long)client_sock, tid);
+            CloseHandle(hThread);
+        } else {
+            log_error("Failed to create thread for client");
+            closesocket(client_sock);
+        }
     }
 
     closesocket(server_sock);
     WSACleanup();
+    log_info("Server shutdown");
 }
