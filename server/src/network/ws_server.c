@@ -58,7 +58,8 @@ int setup_ws_server(uint16_t port) {
     server_addr.sin_port = htons(port);
 
     if (bind(server_sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
-        printf("Bind failed\n");
+        int err = WSAGetLastError();
+        fprintf(stderr, "Bind failed: WSAGetLastError=%d\n", err);
         closesocket(server_sock);
         WSACleanup();
         return -1;

@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useForm } from "@/hooks/useForm";
-import { validateLoginForm } from "@/utils/validation";
+import { validateRegisterForm } from "@/utils/validation";
 
-export default function LoginForm() {
+export default function RegisterForm() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { register } = useAuth();
   const [apiError, setApiError] = useState("");
 
   const {
@@ -20,18 +20,24 @@ export default function LoginForm() {
   } = useForm(
     {
       username: "",
+      email: "",
       password: "",
+      confirmPassword: "",
     },
-    validateLoginForm
+    validateRegisterForm
   );
 
   const onSubmit = async (formValues) => {
     try {
       setApiError("");
-      await login(formValues.username, formValues.password);
-      navigate("/dashboard");
+      await register(
+        formValues.username,
+        formValues.email,
+        formValues.password
+      );
+      navigate("/login");
     } catch (error) {
-      setApiError(error.message || "Login failed. Please try again.");
+      setApiError(error.message || "Registration failed. Please try again.");
     }
   };
 
@@ -59,10 +65,28 @@ export default function LoginForm() {
           className="w-full px-4 py-2 bg-[#0f1419] border border-[#00d9ff] border-opacity-30 rounded text-[#e8f0ff] placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#00d9ff] focus:border-transparent"
           placeholder="username"
           disabled={isSubmitting}
-          autoComplete="username"
         />
         {touched.username && errors.username && (
           <p className="mt-1 text-sm text-[#ff4757]">{errors.username}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-[#00d9ff] mb-2">
+          Email
+        </label>
+        <input
+          type="email"
+          name="email"
+          value={values.email}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          className="w-full px-4 py-2 bg-[#0f1419] border border-[#00d9ff] border-opacity-30 rounded text-[#e8f0ff] placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#00d9ff] focus:border-transparent"
+          placeholder="your@email.com"
+          disabled={isSubmitting}
+        />
+        {touched.email && errors.email && (
+          <p className="mt-1 text-sm text-[#ff4757]">{errors.email}</p>
         )}
       </div>
 
@@ -79,10 +103,30 @@ export default function LoginForm() {
           className="w-full px-4 py-2 bg-[#0f1419] border border-[#00d9ff] border-opacity-30 rounded text-[#e8f0ff] placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#00d9ff] focus:border-transparent"
           placeholder="••••••••"
           disabled={isSubmitting}
-          autoComplete="current-password"
         />
         {touched.password && errors.password && (
           <p className="mt-1 text-sm text-[#ff4757]">{errors.password}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-[#00d9ff] mb-2">
+          Confirm Password
+        </label>
+        <input
+          type="password"
+          name="confirmPassword"
+          value={values.confirmPassword}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          className="w-full px-4 py-2 bg-[#0f1419] border border-[#00d9ff] border-opacity-30 rounded text-[#e8f0ff] placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#00d9ff] focus:border-transparent"
+          placeholder="••••••••"
+          disabled={isSubmitting}
+        />
+        {touched.confirmPassword && errors.confirmPassword && (
+          <p className="mt-1 text-sm text-[#ff4757]">
+            {errors.confirmPassword}
+          </p>
         )}
       </div>
 
@@ -91,17 +135,8 @@ export default function LoginForm() {
         disabled={isSubmitting}
         className="w-full py-3 bg-gradient-to-r from-[#00d9ff] to-[#9d4edd] text-[#0f1419] font-bold rounded hover:shadow-lg hover:shadow-[#00d9ff] transition transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {isSubmitting ? "Signing in..." : "Sign In"}
+        {isSubmitting ? "Creating account..." : "Create Account"}
       </button>
-
-      <div className="text-center">
-        <a
-          href="#"
-          className="text-sm text-[#00d9ff] hover:text-[#00ffd9] transition"
-        >
-          Forgot password?
-        </a>
-      </div>
     </form>
   );
 }
