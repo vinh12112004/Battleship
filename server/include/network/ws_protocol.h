@@ -4,9 +4,28 @@
 #define MAX_JWT_LEN 512
 
 #include <stdint.h>
-#include <winsock2.h>  // SOCKET typedef
+#include <winsock2.h>
 
-// 1. Enum message type
+// WebSocket opcode
+typedef enum {
+    WS_OPCODE_CONTINUATION = 0x0,
+    WS_OPCODE_TEXT = 0x1,
+    WS_OPCODE_BINARY = 0x2,
+    WS_OPCODE_CLOSE = 0x8,
+    WS_OPCODE_PING = 0x9,
+    WS_OPCODE_PONG = 0xA
+} ws_opcode_t;
+
+// WebSocket frame header
+typedef struct {
+    uint8_t fin;
+    uint8_t opcode;
+    uint8_t mask;
+    uint64_t payload_len;
+    uint8_t masking_key[4];
+} ws_frame_t;
+
+// Message types
 typedef enum {
     MSG_REGISTER = 1,
     MSG_LOGIN,
@@ -18,10 +37,11 @@ typedef enum {
     MSG_PLAYER_MOVE,
     MSG_MOVE_RESULT,
     MSG_GAME_OVER,
-    MSG_CHAT
+    MSG_CHAT,
+    MSG_LOGOUT
 } msg_type;
 
-// 2. Payload structs
+// Payload structs
 typedef struct { char username[32]; char password[32]; } auth_payload;
 typedef struct { char token[MAX_JWT_LEN]; char username[32]; } auth_success_payload;
 typedef struct { char reason[64]; } auth_failed_payload;
@@ -30,9 +50,10 @@ typedef struct { int x; int y; int hit; char sunk[32]; } move_result_payload;
 typedef struct { char opponent[32]; } start_game_payload;
 typedef struct { char message[128]; } chat_payload;
 
-// 3. Wrapper message
+// Message structure
 typedef struct {
     msg_type type;
+    char token[MAX_JWT_LEN];
     union {
         auth_payload auth;
         auth_success_payload auth_suc;
@@ -44,8 +65,12 @@ typedef struct {
     } payload;
 } message_t;
 
-// 4. Serialize / deserialize
-ssize_t send_message(SOCKET sock, message_t *msg);
-ssize_t recv_message(SOCKET sock, message_t *msg);
+// WebSocket functions
+int ws_handshake(SOCKET sock);
+ssize_t ws_send_message(SOCKET sock, message_t *msg);
+ssize_t ws_recv_message(SOCKET sock, message_t *msg);
+int ws_send_frame(SOCKET sock, uint8_t opcode, const char *payload, size_t len);
+int ws_recv_frame(SOCKET sock, ws_frame_t *frame, char **payload);
+void ws_close(SOCKET sock, uint16_t code);
 
 #endif
