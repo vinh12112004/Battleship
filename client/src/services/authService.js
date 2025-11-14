@@ -38,7 +38,7 @@ export const authService = {
       wsService.onMessage(MSG_TYPES.AUTH_SUCCESS, successHandler);
       wsService.onMessage(MSG_TYPES.AUTH_FAILED, failHandler);
 
-      // Send register message
+      // Send register message (wsService.sendMessage đã được cập nhật)
       wsService.sendMessage(MSG_TYPES.REGISTER, { username, password });
     });
   },
@@ -75,11 +75,18 @@ export const authService = {
       wsService.onMessage(MSG_TYPES.AUTH_SUCCESS, successHandler);
       wsService.onMessage(MSG_TYPES.AUTH_FAILED, failHandler);
 
+      // Send login message (wsService.sendMessage đã được cập nhật)
       wsService.sendMessage(MSG_TYPES.LOGIN, { username, password });
     });
   },
 
   async logout() {
+    // Gửi tin nhắn logout đến server
+    if (wsService.ws && wsService.ws.readyState === WebSocket.OPEN) {
+      // Gửi tin nhắn với token hiện tại
+      wsService.sendMessage(MSG_TYPES.LOGOUT, {});
+    }
+
     this.clearAuth();
     wsService.disconnect();
   },
@@ -126,7 +133,9 @@ export const authService = {
   },
 
   isAuthenticated() {
-    return !!this.getToken();
+    const token = this.getToken();
+    if (!token) return false;
+    return !this.isTokenExpired(token);
   },
 
   isTokenExpired(token) {
