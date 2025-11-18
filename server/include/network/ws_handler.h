@@ -3,6 +3,9 @@
 
 #include "ws_protocol.h"
 
+typedef struct {
+    char user_id[64];
+} auth_user_t;
 // Xử lý message chung
 void handle_message(int client_sock, message_t *msg);
 
@@ -12,5 +15,8 @@ void handle_login(int client_sock, auth_payload *auth);
 void handle_join_queue(int client_sock);
 void handle_player_move(int client_sock, move_payload *move);
 void handle_chat(int client_sock, chat_payload *chat);
+void handle_logout(int client_sock, message_t *msg);
+int check_token(int client_sock, const char *token, auth_user_t *out_user);
+
 
 #endif

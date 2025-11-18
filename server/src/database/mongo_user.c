@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <bson/bson.h>
 
 user_t* user_create(const char *username, const char *email, const char *password_hash) {
     if (!username || !email || !password_hash) {
@@ -62,7 +63,7 @@ user_t* user_create(const char *username, const char *email, const char *passwor
     
     user_t *user = NULL;
     if (success) {
-        user = (user_t*)malloc(sizeof(user_t));
+        user = (user_t*)calloc(1, sizeof(user_t)); 
         if (user) {
             char oid_str[25];
             bson_oid_to_string(&oid, oid_str);
@@ -113,7 +114,15 @@ user_t* user_find_by_username(const char *username) {
     
     if (mongoc_cursor_next(cursor, &doc)) {
         bson_iter_t iter;
-        user = (user_t*)malloc(sizeof(user_t));
+        user = (user_t*)calloc(1, sizeof(user_t)); // IMPORTANT: Use calloc to zero-initialize
+        
+        if (!user) {
+            log_error("Failed to allocate memory for user");
+            goto cleanup;
+        }
+        
+        // Initialize all pointers to NULL (already done by calloc)
+        // This is critical for safe freeing later
         
         if (bson_iter_init_find(&iter, doc, "_id")) {
             const bson_oid_t *oid = bson_iter_oid(&iter);
@@ -134,13 +143,41 @@ user_t* user_find_by_username(const char *username) {
             user->password_hash = _strdup(bson_iter_utf8(&iter, NULL));
         }
         
+        // Initialize optional fields with defaults or NULL
+        if (bson_iter_init_find(&iter, doc, "display_name")) {
+            user->display_name = _strdup(bson_iter_utf8(&iter, NULL));
+        } else {
+            user->display_name = NULL; // Already NULL from calloc
+        }
+        
+        if (bson_iter_init_find(&iter, doc, "avatar_url")) {
+            user->avatar_url = _strdup(bson_iter_utf8(&iter, NULL));
+        } else {
+            user->avatar_url = NULL;
+        }
+        
+        if (bson_iter_init_find(&iter, doc, "status")) {
+            user->status = _strdup(bson_iter_utf8(&iter, NULL));
+        } else {
+            user->status = NULL;
+        }
+        
+        if (bson_iter_init_find(&iter, doc, "rank")) {
+            user->rank = _strdup(bson_iter_utf8(&iter, NULL));
+        } else {
+            user->rank = NULL;
+        }
+        
         if (bson_iter_init_find(&iter, doc, "elo_rating")) {
             user->elo_rating = bson_iter_int32(&iter);
+        } else {
+            user->elo_rating = 1500; // Default
         }
         
         log_info("User found: %s", username);
     }
     
+cleanup:
     mongoc_cursor_destroy(cursor);
     bson_destroy(query);
     mongoc_collection_destroy(collection);
@@ -156,14 +193,138 @@ user_t* user_find_by_email(const char *email) {
 }
 
 user_t* user_find_by_id(const char *user_id) {
-    // ... (implement similarly)
-    return NULL;
+    if (!user_id) return NULL;
+
+    // Kiểm tra format ObjectId: phải 24 ký tự hex
+    if (strlen(user_id) != 24) {
+        log_error("Invalid ObjectId format: %s", user_id);
+        return NULL;
+    }
+
+    mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
+    if (!client) return NULL;
+
+    mongoc_collection_t *collection = mongo_get_collection(client, COLLECTION_USERS);
+    if (!collection) {
+        mongo_release_client(g_mongo_ctx, client);
+        return NULL;
+    }
+
+    // Tạo query tìm theo _id
+    bson_t *query = bson_new();
+    bson_oid_t oid;
+    bson_oid_init_from_string(&oid, user_id);  // <-- dùng bson_oid_init_from_string
+    BSON_APPEND_OID(query, "_id", &oid);
+
+    mongoc_cursor_t *cursor = mongoc_collection_find_with_opts(collection, query, NULL, NULL);
+
+    user_t *user = NULL;
+    const bson_t *doc;
+
+    if (mongoc_cursor_next(cursor, &doc)) {
+        bson_iter_t iter;
+        user = (user_t*)calloc(1, sizeof(user_t)); // zero-initialize
+
+        if (!user) {
+            log_error("Failed to allocate memory for user");
+            goto cleanup;
+        }
+
+        // Lấy các field cơ bản
+        if (bson_iter_init_find(&iter, doc, "_id")) {
+            const bson_oid_t *oid_val = bson_iter_oid(&iter);
+            char oid_str[25];
+            bson_oid_to_string(oid_val, oid_str);
+            user->id = _strdup(oid_str);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "username")) {
+            user->username = _strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "email")) {
+            user->email = _strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "password_hash")) {
+            user->password_hash = _strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "display_name")) {
+            user->display_name = _strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "avatar_url")) {
+            user->avatar_url = _strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "status")) {
+            user->status = _strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "rank")) {
+            user->rank = _strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "elo_rating")) {
+            user->elo_rating = bson_iter_int32(&iter);
+        } else {
+            user->elo_rating = 1500;
+        }
+
+        log_info("User found by ID: %s", user_id);
+    }
+
+cleanup:
+    mongoc_cursor_destroy(cursor);
+    bson_destroy(query);
+    mongoc_collection_destroy(collection);
+    mongo_release_client(g_mongo_ctx, client);
+
+    return user;
 }
 
-bool user_update_status(const char *user_id, const char *status) {
-    // ... (implement update operation)
-    return false;
+bool user_update_status(const char *username, const char *status) {
+    if (!username || !status) return false;
+
+    mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
+    if (!client) return false;
+
+    mongoc_collection_t *collection = mongo_get_collection(client, COLLECTION_USERS);
+    if (!collection) {
+        mongo_release_client(g_mongo_ctx, client);
+        return false;
+    }
+
+    bson_t *query = bson_new();
+    BSON_APPEND_UTF8(query, "username", username);
+
+    bson_t *update = bson_new();
+    bson_t child;
+
+    BSON_APPEND_DOCUMENT_BEGIN(update, "$set", &child);
+    BSON_APPEND_UTF8(&child, "status", status);
+    BSON_APPEND_NOW_UTC(&child, "updated_at");
+    bson_append_document_end(update, &child);
+
+    bson_error_t error;
+    bool success = mongoc_collection_update_one(
+        collection, query, update, NULL, NULL, &error
+    );
+
+    if (!success)
+        log_error("Failed to update user status (%s -> %s): %s", username, status, error.message);
+    else
+        log_info("User %s status updated to %s", username, status);
+
+    bson_destroy(query);
+    bson_destroy(update);
+    mongoc_collection_destroy(collection);
+    mongo_release_client(g_mongo_ctx, client);
+
+    return success;
 }
+
 
 void user_free(user_t *user) {
     if (!user) return;

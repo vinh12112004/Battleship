@@ -21,7 +21,7 @@ int main() {
     log_info("MongoDB connected successfully.");
 
     // 3️⃣ Start WebSocket / TCP server
-    uint16_t port = 8080;
+    uint16_t port = 9090;
     log_info("Starting WebSocket/TCP server on port %d...", port);
     start_ws_server(port);  // <- vòng lặp accept client bên trong
 

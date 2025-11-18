@@ -98,13 +98,26 @@ auth_result_t* auth_login(const char *username, const char *password) {
     result->success = true;
     result->token = token;
     result->user = user;
+
+    user_update_status(username, "online");
     
     log_info("User logged in successfully: %s", username);
     return result;
 }
 
 bool auth_logout(const char *token) {
-    // TODO: Invalidate token in sessions collection
+    char *user_id = jwt_verify(token);
+    if (!user_id) return false;
+
+    user_t *user = user_find_by_id(user_id);
+    free(user_id);
+
+    if (user) {
+        user_update_status(user->username, "offline");
+        user_free(user);
+        log_debug("User status set to offline on logout");
+    }
+
     log_info("User logged out");
     return true;
 }
