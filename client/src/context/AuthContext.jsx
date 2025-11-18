@@ -1,6 +1,6 @@
 import { createContext, useState, useEffect } from "react";
 import { authService } from "@/services/authService";
-
+import { wsService } from "@/services/wsService";
 // eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext(null);
 
@@ -22,6 +22,11 @@ export function AuthProvider({ children }) {
           }
 
           try {
+            if (!wsService.isConnected()) {
+              console.log('[Auth] Reconnecting WebSocket...');
+              await wsService.connect();
+              console.log('[Auth] WebSocket reconnected');
+            }
             const currentUser = await authService.getCurrentUser();
             setUser(currentUser);
             authService.setUser(currentUser);

@@ -88,7 +88,7 @@ export const authService = {
     }
 
     this.clearAuth();
-    wsService.disconnect();
+    wsService.logout();
   },
 
   // ==================== HTTP fallback (keep existing methods) ====================
