@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { wsService } from "@/services/wsService";
 
 export default function ConnectionStatus() {
-  const [status, setStatus] = useState("disconnected");
+  const [status, setStatus] = useState("initializing");
   const [showLogoutToast, setShowLogoutToast] = useState(false);
 
   useEffect(() => {
@@ -10,7 +10,6 @@ export default function ConnectionStatus() {
       console.log("[ConnectionStatus] State changed:", state);
       setStatus(state);
 
-      // ✅ Hiển thị toast khi logout thành công
       if (state === "logged_out") {
         setShowLogoutToast(true);
         setTimeout(() => setShowLogoutToast(false), 3000);
@@ -19,15 +18,25 @@ export default function ConnectionStatus() {
 
     wsService.onConnectionStateChange(handleConnectionChange);
 
-    // Cleanup (optional, nếu cần remove listener)
+    if (wsService.isConnected()) {
+      setStatus("connected");
+    } else if (
+      wsService.ws &&
+      wsService.ws.readyState === WebSocket.CONNECTING
+    ) {
+      setStatus("connecting");
+    }
+
     return () => {
-      // wsService.removeConnectionStateCallback(handleConnectionChange);
+      // Cleanup nếu cần
     };
   }, []);
 
-  // ✅ QUAN TRỌNG: Không hiển thị banner khi connected HOẶC logged_out
-  if (status === "connected" || status === "logged_out") {
-    // Chỉ hiển thị toast logout thành công
+  if (
+    status === "initializing" ||
+    status === "connected" ||
+    status === "logged_out"
+  ) {
     if (showLogoutToast) {
       return (
         <div className="fixed top-4 right-4 bg-green-500 text-white py-3 px-6 rounded-lg shadow-lg z-50 animate-fade-in">
@@ -36,7 +45,7 @@ export default function ConnectionStatus() {
         </div>
       );
     }
-    return null;
+    return null; // ← Không hiển thị banner
   }
 
   const statusConfig = {

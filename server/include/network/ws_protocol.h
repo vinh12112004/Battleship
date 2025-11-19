@@ -38,7 +38,9 @@ typedef enum {
     MSG_MOVE_RESULT,
     MSG_GAME_OVER,
     MSG_CHAT,
-    MSG_LOGOUT
+    MSG_LOGOUT,
+    MSG_PING = 13,    
+    MSG_PONG = 14 
 } msg_type;
 
 // Payload structs

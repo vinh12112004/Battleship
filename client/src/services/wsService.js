@@ -1,5 +1,26 @@
+// Message type constants
+const MSG_TYPES = {
+  REGISTER: 1,
+  LOGIN: 2,
+  AUTH_SUCCESS: 3,
+  AUTH_FAILED: 4,
+  JOIN_QUEUE: 5,
+  LEAVE_QUEUE: 6,
+  START_GAME: 7,
+  PLAYER_MOVE: 8,
+  MOVE_RESULT: 9,
+  GAME_OVER: 10,
+  CHAT: 11,
+  LOGOUT: 12,
+  PING: 13,
+  PONG: 14,
+};
+
 class WebSocketService {
   constructor() {
+    if (WebSocketService.instance) {
+      return WebSocketService.instance;
+    }
     this.ws = null;
     this.messageHandlers = new Map();
     this.url = null;
@@ -30,10 +51,25 @@ class WebSocketService {
     this.OFFSET_TYPE = 0;
     this.OFFSET_TOKEN = 4;
     this.OFFSET_PAYLOAD = 4 + this.MAX_JWT_LEN; // 516
+
+    WebSocketService.instance = this;
   }
 
   connect(url = "ws://localhost:9090") {
     this.url = url;
+
+    // Nếu đã connected, trả về Promise resolved
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log("[WS] Already connected");
+      return Promise.resolve();
+    }
+
+    // Nếu đang connecting, đợi connection hiện tại
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      console.log("[WS] Already connecting, waiting...");
+      return this.waitForConnection();
+    }
+
     this.isManualDisconnect = false;
     this.isLoggedOut = false;
 
@@ -43,30 +79,24 @@ class WebSocketService {
     }
 
     return new Promise((resolve, reject) => {
-      // Nếu đang connecting, đợi kết nối hiện tại
-      if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
-        console.log("[WS] Already connecting, waiting...");
-        return this.waitForConnection().then(resolve).catch(reject);
-      }
-      // Nếu đã connected, resolve ngay
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        console.log("[WS] Already connected");
-        resolve();
-        return;
-      }
-      // Đóng kết nối cũ nếu có
-      if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+      // Đóng kết nối cũ chỉ khi nó đang CLOSING (không đóng OPEN hoặc CONNECTING)
+      if (this.ws && this.ws.readyState === WebSocket.CLOSING) {
+        console.log("[WS] Closing old connection...");
         this.ws.close();
       }
 
-      console.log(`[WS] Connecting to ${url}...`);
+      console.log(`[WS] Creating new connection to ${url}...`);
       this.ws = new WebSocket(url);
       this.ws.binaryType = "arraybuffer";
+
+      this.connectResolve = resolve;
+      this.connectReject = reject;
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
         console.log(`[WS] ✅ Connected to ${url}`);
         this.notifyConnectionState("connected");
+        this.startPing(); // gửi ping mỗi 30s
         resolve();
       };
 
@@ -84,6 +114,7 @@ class WebSocketService {
         console.log(
           `[WS] 🔌 Disconnected (code: ${event.code}, reason: ${event.reason})`
         );
+        this.stopPing(); // dừng khi disconnect
         if (!this.isLoggedOut) {
           this.notifyConnectionState("disconnected");
         }
@@ -129,7 +160,32 @@ class WebSocketService {
     this.autoReconnectEnabled = enabled;
   }
 
+  startPing() {
+    this.stopPing(); // Clear existing interval
+
+    this.pingInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        console.log("[WS] Sending ping...");
+
+        // Gửi MSG_PING để keep-alive
+        const buffer = new ArrayBuffer(this.MESSAGE_T_SIZE);
+        const view = new DataView(buffer);
+        view.setUint32(0, MSG_TYPES.PING, true); // ✅ Dùng constant
+
+        this.ws.send(buffer);
+      }
+    }, 30000); // 30 seconds
+  }
+
+  stopPing() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+  }
+
   disconnect() {
+    this.stopPing();
     this.isManualDisconnect = true;
     if (this.ws) {
       this.ws.close();
@@ -142,8 +198,9 @@ class WebSocketService {
   }
 
   logout() {
+    this.stopPing();
     console.log("[WS] logout() called");
-    
+
     // ✅ 1. Set flag NGAY LẬP TỨC
     this.isLoggedOut = true;
     this.isManualDisconnect = true;
@@ -154,7 +211,7 @@ class WebSocketService {
     // ✅ 3. Delay một chút để state được xử lý
     this.logoutTimeout = setTimeout(() => {
       console.log("[WS] Closing socket after logout delay");
-      
+
       if (this.ws) {
         this.ws.close(1000, "User logout"); // Normal closure
         this.ws = null;
@@ -352,20 +409,7 @@ class WebSocketService {
   }
 }
 
+// Export instance thay vì class
 export const wsService = new WebSocketService();
 
-// Message type constants
-export const MSG_TYPES = {
-  REGISTER: 1,
-  LOGIN: 2,
-  AUTH_SUCCESS: 3,
-  AUTH_FAILED: 4,
-  JOIN_QUEUE: 5,
-  LEAVE_QUEUE: 6,
-  START_GAME: 7,
-  PLAYER_MOVE: 8,
-  MOVE_RESULT: 9,
-  GAME_OVER: 10,
-  CHAT: 11,
-  LOGOUT: 12, // Thêm type 12 cho LOGOUT
-};
+export { MSG_TYPES };

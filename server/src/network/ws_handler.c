@@ -52,6 +52,16 @@ void handle_message(int client_sock, message_t *msg) {
             break;
         case MSG_LOGOUT:
             handle_logout(client_sock, msg);
+            break;
+        case MSG_PING:
+            log_debug("Received MSG_PING from client %d", client_sock);
+            message_t pong = {0};
+            pong.type = MSG_PONG;
+            ws_send_message(client_sock, &pong);
+            break;
+            
+        case MSG_PONG:
+            log_debug("Received MSG_PONG from client %d", client_sock);
             break;   
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);

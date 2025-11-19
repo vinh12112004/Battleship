@@ -6,7 +6,6 @@ const USER_KEY = "auth_user";
 export const authService = {
   // ==================== WebSocket Auth ====================
   async register(username, email, password) {
-    // Connect to WebSocket if not connected
     if (!wsService.ws || wsService.ws.readyState !== WebSocket.OPEN) {
       await wsService.connect("ws://localhost:9090");
     }
@@ -38,7 +37,6 @@ export const authService = {
       wsService.onMessage(MSG_TYPES.AUTH_SUCCESS, successHandler);
       wsService.onMessage(MSG_TYPES.AUTH_FAILED, failHandler);
 
-      // Send register message (wsService.sendMessage đã được cập nhật)
       wsService.sendMessage(MSG_TYPES.REGISTER, { username, password });
     });
   },
@@ -75,15 +73,12 @@ export const authService = {
       wsService.onMessage(MSG_TYPES.AUTH_SUCCESS, successHandler);
       wsService.onMessage(MSG_TYPES.AUTH_FAILED, failHandler);
 
-      // Send login message (wsService.sendMessage đã được cập nhật)
       wsService.sendMessage(MSG_TYPES.LOGIN, { username, password });
     });
   },
 
   async logout() {
-    // Gửi tin nhắn logout đến server
     if (wsService.ws && wsService.ws.readyState === WebSocket.OPEN) {
-      // Gửi tin nhắn với token hiện tại
       wsService.sendMessage(MSG_TYPES.LOGOUT, {});
     }
 
@@ -91,9 +86,42 @@ export const authService = {
     wsService.logout();
   },
 
-  // ==================== HTTP fallback (keep existing methods) ====================
+  // ==================== Auto-login ====================
+  // ✅ Tự động reconnect khi có token
+  async autoReconnect() {
+    const token = this.getToken();
+    const cachedUser = this.getUser();
+
+    // Nếu không có token, return null
+    if (!token) {
+      return null;
+    }
+
+    // Kiểm tra token hết hạn
+    if (this.isTokenExpired(token)) {
+      console.log("[AuthService] Token expired, clearing auth...");
+      this.clearAuth();
+      return null;
+    }
+
+    // Token còn hạn, reconnect WebSocket
+    try {
+      if (!wsService.isConnected()) {
+        console.log("[AuthService] Reconnecting WebSocket with valid token...");
+        await wsService.connect();
+      }
+
+      console.log("[AuthService] Auto-reconnect successful");
+      return { token, user: cachedUser };
+    } catch (error) {
+      console.error("[AuthService] WebSocket reconnect failed:", error);
+      // Vẫn return user data nếu có (offline mode)
+      return cachedUser ? { token, user: cachedUser } : null;
+    }
+  },
+
+  // ==================== HTTP fallback ====================
   async getCurrentUser() {
-    // Keep HTTP version for profile fetching
     return null;
   },
 
@@ -144,7 +172,8 @@ export const authService = {
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
       const expiryTime = payload.exp * 1000;
-      return Date.now() >= expiryTime;
+      // ✅ Token hết hạn nếu còn < 5 phút
+      return Date.now() >= expiryTime - 5 * 60 * 1000;
     } catch {
       return true;
     }
