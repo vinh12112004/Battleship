@@ -1,6 +1,6 @@
 import { createContext, useState, useEffect } from "react";
 import { authService } from "@/services/authService";
-import { wsService } from "@/services/wsService";
+
 // eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext(null);
 
@@ -13,35 +13,19 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const token = authService.getToken();
-        const cachedUser = authService.getUser();
+        console.log("[Auth] Initializing authentication...");
 
-        if (token && !authService.isTokenExpired(token)) {
-          if (cachedUser) {
-            setUser(cachedUser);
-          }
+        // ✅ Tự động reconnect nếu có token
+        const result = await authService.autoReconnect();
 
-          try {
-            if (!wsService.isConnected()) {
-              console.log('[Auth] Reconnecting WebSocket...');
-              await wsService.connect();
-              console.log('[Auth] WebSocket reconnected');
-            }
-            const currentUser = await authService.getCurrentUser();
-            setUser(currentUser);
-            authService.setUser(currentUser);
-          } catch (err) {
-            console.error("Failed to fetch current user:", err);
-            if (!cachedUser) {
-              authService.clearAuth();
-              setUser(null);
-            }
-          }
+        if (result) {
+          console.log("[Auth] Auto-reconnect successful:", result.user);
+          setUser(result.user);
         } else {
-          authService.clearAuth();
+          console.log("[Auth] No valid session found");
         }
       } catch (err) {
-        console.error("Auth initialization error:", err);
+        console.error("[Auth] Initialization error:", err);
         authService.clearAuth();
       } finally {
         setLoading(false);
@@ -50,6 +34,11 @@ export function AuthProvider({ children }) {
     };
 
     initAuth();
+
+    // ✅ KHÔNG cleanup WebSocket khi unmount
+    return () => {
+      console.log("[Auth] Component unmounting, keeping WebSocket alive");
+    };
   }, []);
 
   const value = {

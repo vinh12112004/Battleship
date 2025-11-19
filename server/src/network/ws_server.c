@@ -18,7 +18,7 @@ DWORD WINAPI client_thread(LPVOID arg) {
 
     log_info("Client connected: socket=%llu", (unsigned long long)client_sock);
 
-    DWORD timeout = 30000; // 30 seconds
+    DWORD timeout = 300000; // 5 minutes
     if (setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
         log_warn("Không thể set socket timeout");
     }
