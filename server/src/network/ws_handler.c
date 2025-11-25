@@ -41,9 +41,6 @@ void handle_message(int client_sock, message_t *msg) {
         case MSG_LOGIN:
             handle_login(client_sock, &msg->payload.auth);
             break;
-        case MSG_JOIN_QUEUE:
-            // handle_join_queue(client_sock, user.user_id);
-            break;
         case MSG_PLAYER_MOVE:
             handle_player_move(client_sock, &msg->payload.move);
             break;
@@ -63,6 +60,13 @@ void handle_message(int client_sock, message_t *msg) {
         case MSG_PONG:
             log_debug("Received MSG_PONG from client %d", client_sock);
             break;   
+        case MSG_JOIN_QUEUE:
+            handle_join_queue(client_sock, msg->token);
+            break;
+            
+        case MSG_LEAVE_QUEUE:
+            handle_leave_queue(client_sock, msg->token);
+            break;
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);
             break;
@@ -201,4 +205,57 @@ int check_token(int client_sock, const char *token, auth_user_t *out_user) {
     free(user_id);
 
     return 1; // hợp lệ
+}
+
+void handle_join_queue(int client_sock, const char *token) {
+    // Verify token
+    char *user_id = jwt_verify(token);
+    if (!user_id) {
+        log_warn("Invalid token for join queue");
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
+        ws_send_message(client_sock, &resp);
+        return;
+    }
+    
+    // Get user info
+    user_t *user = user_find_by_id(user_id);
+    if (!user) {
+        log_error("User not found: %s", user_id);
+        free(user_id);
+        return;
+    }
+    
+    // Add to matchmaking queue
+    bool success = matcher_add_to_queue(
+        client_sock, 
+        user_id, 
+        user->elo_rating, 
+        "ranked" // Default game type
+    );
+    
+    if (success) {
+        log_info("Player %s joined queue (ELO: %d)", user->username, user->elo_rating);
+        
+        // Send confirmation (optional)
+        // message_t resp = {0};
+        // resp.type = MSG_QUEUE_JOINED;
+        // ws_send_message(client_sock, &resp);
+    } else {
+        log_error("Failed to add player %s to queue", user->username);
+    }
+    
+    user_free(user);
+    free(user_id);
+}
+
+void handle_leave_queue(int client_sock, const char *token) {
+    char *user_id = jwt_verify(token);
+    if (!user_id) return;
+    
+    matcher_remove_from_queue(user_id);
+    log_info("Player %s left queue", user_id);
+    
+    free(user_id);
 }

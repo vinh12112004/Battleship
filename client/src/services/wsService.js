@@ -407,6 +407,44 @@ class WebSocketService {
       }
     }
   }
+
+  joinQueue() {
+    const token = localStorage.getItem("auth_token");
+    if (!token) {
+      throw new Error("Not authenticated");
+    }
+
+    const buffer = new ArrayBuffer(this.MESSAGE_T_SIZE);
+    const view = new DataView(buffer);
+
+    // Set message type
+    view.setUint32(0, MSG_TYPES.JOIN_QUEUE, true);
+
+    // Set token
+    const tokenBytes = new TextEncoder().encode(token);
+    const uint8 = new Uint8Array(buffer);
+    uint8.set(tokenBytes.slice(0, this.MAX_JWT_LEN - 1), 4);
+
+    this.ws.send(buffer);
+    console.log("[WS] Joined matchmaking queue");
+  }
+
+  leaveQueue() {
+    const token = localStorage.getItem("auth_token");
+    if (!token) return;
+
+    const buffer = new ArrayBuffer(this.MESSAGE_T_SIZE);
+    const view = new DataView(buffer);
+
+    view.setUint32(0, MSG_TYPES.LEAVE_QUEUE, true);
+
+    const tokenBytes = new TextEncoder().encode(token);
+    const uint8 = new Uint8Array(buffer);
+    uint8.set(tokenBytes.slice(0, this.MAX_JWT_LEN - 1), 4);
+
+    this.ws.send(buffer);
+    console.log("[WS] Left matchmaking queue");
+  }
 }
 
 // Export instance thay vì class

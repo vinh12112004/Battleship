@@ -3,6 +3,7 @@
 #include "utils/logger.h"
 #include "database/mongo.h"
 #include "config.h"
+#include "matchmaking/matcher.h"
 
 int main() {
     // 1️⃣ Log server start
@@ -19,7 +20,7 @@ int main() {
     }
 
     log_info("MongoDB connected successfully.");
-
+    matcher_init();
     // 3️⃣ Start WebSocket / TCP server
     uint16_t port = 9090;
     log_info("Starting WebSocket/TCP server on port %d...", port);
