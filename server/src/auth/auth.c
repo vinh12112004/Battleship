@@ -14,7 +14,7 @@ auth_result_t* auth_register(const char *username, const char *email, const char
     char error_msg[256];
     if (!password_validate(password, error_msg, sizeof(error_msg))) {
         result->success = false;
-        result->error_message = _strdup(error_msg);
+        result->error_message = strdup(error_msg);
         log_warn("Registration failed: %s", error_msg);
         return result;
     }
@@ -23,7 +23,7 @@ auth_result_t* auth_register(const char *username, const char *email, const char
     user_t *existing = user_find_by_username(username);
     if (existing) {
         result->success = false;
-        result->error_message = _strdup("Username already exists");
+        result->error_message = strdup("Username already exists");
         user_free(existing);
         log_warn("Registration failed: username exists");
         return result;
@@ -33,7 +33,7 @@ auth_result_t* auth_register(const char *username, const char *email, const char
     char *password_hash_str = password_hash(password);
     if (!password_hash_str) {
         result->success = false;
-        result->error_message = _strdup("Failed to hash password");
+        result->error_message = strdup("Failed to hash password");
         return result;
     }
     
@@ -43,7 +43,7 @@ auth_result_t* auth_register(const char *username, const char *email, const char
     
     if (!user) {
         result->success = false;
-        result->error_message = _strdup("Failed to create user");
+        result->error_message = strdup("Failed to create user");
         return result;
     }
     
@@ -51,7 +51,7 @@ auth_result_t* auth_register(const char *username, const char *email, const char
     char *token = jwt_generate(user->id);
     if (!token) {
         result->success = false;
-        result->error_message = _strdup("Failed to generate token");
+        result->error_message = strdup("Failed to generate token");
         user_free(user);
         return result;
     }
@@ -72,7 +72,7 @@ auth_result_t* auth_login(const char *username, const char *password) {
     user_t *user = user_find_by_username(username);
     if (!user) {
         result->success = false;
-        result->error_message = _strdup("Invalid username or password");
+        result->error_message = strdup("Invalid username or password");
         log_warn("Login failed: user not found");
         return result;
     }
@@ -80,7 +80,7 @@ auth_result_t* auth_login(const char *username, const char *password) {
     // Verify password
     if (!password_verify(password, user->password_hash)) {
         result->success = false;
-        result->error_message = _strdup("Invalid username or password");
+        result->error_message = strdup("Invalid username or password");
         user_free(user);
         log_warn("Login failed: invalid password");
         return result;
@@ -90,7 +90,7 @@ auth_result_t* auth_login(const char *username, const char *password) {
     char *token = jwt_generate(user->id);
     if (!token) {
         result->success = false;
-        result->error_message = _strdup("Failed to generate token");
+        result->error_message = strdup("Failed to generate token");
         user_free(user);
         return result;
     }

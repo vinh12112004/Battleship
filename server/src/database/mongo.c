@@ -33,7 +33,7 @@ mongo_context_t* mongo_init(const char *uri_string, const char *db_name) {
     }
     
     mongoc_client_pool_max_size(ctx->pool, 10);
-    ctx->db_name = _strdup(db_name);
+    ctx->db_name = strdup(db_name);
     ctx->is_connected = false;
     
     if (mongo_ping(ctx)) {

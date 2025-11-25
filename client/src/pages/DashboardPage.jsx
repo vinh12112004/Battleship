@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import NavBar from "../components/common/NavBar";
+// import NavBar from "../components/common/NavBar";
+import NavBar from "../components/common/Navbar";
 import DashboardHeader from "../components/game/DashboardHeader";
 import OnlinePlayers from "../components/game/OnlinePlayer";
-import MatchmakingPanel from "../components/game/MatchMakingPanel";
+import MatchmakingPanel from "../components/game/MatchmakingPanel";
 import ActiveGames from "../components/game/ActiveGames";
 import LeaderboardPreview from "../components/game/LeaderboardPreview";
 

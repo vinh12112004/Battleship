@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import NavBar from "../components/common/NavBar";
+import NavBar from "../components/common/Navbar";
 import LoginForm from "@/components/auth/LoginForm";
 
 export default function LoginPage() {
