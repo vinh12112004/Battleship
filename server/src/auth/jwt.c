@@ -106,7 +106,7 @@ char* jwt_generate(const char *user_id) {
 // ===== JWT Verify =====
 char* jwt_verify(const char *token) {
     if (!token) return NULL;
-    char *tok_copy = _strdup(token);
+    char *tok_copy = strdup(token);
 
     char *header = strtok(tok_copy, ".");
     char *payload = strtok(NULL, ".");
@@ -143,7 +143,7 @@ char* jwt_verify(const char *token) {
     cJSON *user_id_json = cJSON_GetObjectItem(json, "user_id");
     if (!user_id_json || !cJSON_IsString(user_id_json)) { cJSON_Delete(json); return NULL; }
 
-    char *user_id = _strdup(user_id_json->valuestring);
+    char *user_id = strdup(user_id_json->valuestring);
     cJSON_Delete(json);
     return user_id;
 }

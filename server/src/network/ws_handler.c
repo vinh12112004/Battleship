@@ -109,7 +109,7 @@ void handle_register(int client_sock, auth_payload *auth) {
     }
 
     // Send message via WebSocket
-    ssize_t sent = ws_send_message((SOCKET)client_sock, &resp);
+    ssize_t sent = ws_send_message((int)client_sock, &resp);
     if (sent <= 0) {
         log_error("Failed to send registration response to client %d", client_sock);
     }

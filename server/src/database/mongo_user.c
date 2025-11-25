@@ -67,14 +67,13 @@ user_t* user_create(const char *username, const char *email, const char *passwor
         if (user) {
             char oid_str[25];
             bson_oid_to_string(&oid, oid_str);
-            user->id = _strdup(oid_str);
-            user->username = _strdup(username);
-            user->email = _strdup(email);
-            user->password_hash = _strdup(password_hash);
-            user->display_name = _strdup(username);
-            user->status = _strdup("offline");
-            user->elo_rating = 1500;
-            user->rank = _strdup("Silver");
+            user->id = strdup(oid_str);
+            user->username = strdup(username);
+            user->email = strdup(email);
+            user->password_hash = strdup(password_hash);
+            user->display_name = strdup(username);
+            user->status = strdup("offline");
+            user->rank = strdup("Silver");
         }
         log_info("User created: %s", username);
     } else {
@@ -128,42 +127,42 @@ user_t* user_find_by_username(const char *username) {
             const bson_oid_t *oid = bson_iter_oid(&iter);
             char oid_str[25];
             bson_oid_to_string(oid, oid_str);
-            user->id = _strdup(oid_str);
+            user->id = strdup(oid_str);
         }
         
         if (bson_iter_init_find(&iter, doc, "username")) {
-            user->username = _strdup(bson_iter_utf8(&iter, NULL));
+            user->username = strdup(bson_iter_utf8(&iter, NULL));
         }
         
         if (bson_iter_init_find(&iter, doc, "email")) {
-            user->email = _strdup(bson_iter_utf8(&iter, NULL));
+            user->email = strdup(bson_iter_utf8(&iter, NULL));
         }
         
         if (bson_iter_init_find(&iter, doc, "password_hash")) {
-            user->password_hash = _strdup(bson_iter_utf8(&iter, NULL));
+            user->password_hash = strdup(bson_iter_utf8(&iter, NULL));
         }
         
         // Initialize optional fields with defaults or NULL
         if (bson_iter_init_find(&iter, doc, "display_name")) {
-            user->display_name = _strdup(bson_iter_utf8(&iter, NULL));
+            user->display_name = strdup(bson_iter_utf8(&iter, NULL));
         } else {
             user->display_name = NULL; // Already NULL from calloc
         }
         
         if (bson_iter_init_find(&iter, doc, "avatar_url")) {
-            user->avatar_url = _strdup(bson_iter_utf8(&iter, NULL));
+            user->avatar_url = strdup(bson_iter_utf8(&iter, NULL));
         } else {
             user->avatar_url = NULL;
         }
         
         if (bson_iter_init_find(&iter, doc, "status")) {
-            user->status = _strdup(bson_iter_utf8(&iter, NULL));
+            user->status = strdup(bson_iter_utf8(&iter, NULL));
         } else {
             user->status = NULL;
         }
         
         if (bson_iter_init_find(&iter, doc, "rank")) {
-            user->rank = _strdup(bson_iter_utf8(&iter, NULL));
+            user->rank = strdup(bson_iter_utf8(&iter, NULL));
         } else {
             user->rank = NULL;
         }
@@ -235,35 +234,35 @@ user_t* user_find_by_id(const char *user_id) {
             const bson_oid_t *oid_val = bson_iter_oid(&iter);
             char oid_str[25];
             bson_oid_to_string(oid_val, oid_str);
-            user->id = _strdup(oid_str);
+            user->id = strdup(oid_str);
         }
 
         if (bson_iter_init_find(&iter, doc, "username")) {
-            user->username = _strdup(bson_iter_utf8(&iter, NULL));
+            user->username = strdup(bson_iter_utf8(&iter, NULL));
         }
 
         if (bson_iter_init_find(&iter, doc, "email")) {
-            user->email = _strdup(bson_iter_utf8(&iter, NULL));
+            user->email = strdup(bson_iter_utf8(&iter, NULL));
         }
 
         if (bson_iter_init_find(&iter, doc, "password_hash")) {
-            user->password_hash = _strdup(bson_iter_utf8(&iter, NULL));
+            user->password_hash = strdup(bson_iter_utf8(&iter, NULL));
         }
 
         if (bson_iter_init_find(&iter, doc, "display_name")) {
-            user->display_name = _strdup(bson_iter_utf8(&iter, NULL));
+            user->display_name = strdup(bson_iter_utf8(&iter, NULL));
         }
 
         if (bson_iter_init_find(&iter, doc, "avatar_url")) {
-            user->avatar_url = _strdup(bson_iter_utf8(&iter, NULL));
+            user->avatar_url = strdup(bson_iter_utf8(&iter, NULL));
         }
 
         if (bson_iter_init_find(&iter, doc, "status")) {
-            user->status = _strdup(bson_iter_utf8(&iter, NULL));
+            user->status = strdup(bson_iter_utf8(&iter, NULL));
         }
 
         if (bson_iter_init_find(&iter, doc, "rank")) {
-            user->rank = _strdup(bson_iter_utf8(&iter, NULL));
+            user->rank = strdup(bson_iter_utf8(&iter, NULL));
         }
 
         if (bson_iter_init_find(&iter, doc, "elo_rating")) {

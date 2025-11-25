@@ -4,7 +4,7 @@
 #define MAX_JWT_LEN 512
 
 #include <stdint.h>
-#include <winsock2.h>
+#include <sys/socket.h>
 
 // WebSocket opcode
 typedef enum {
@@ -68,11 +68,11 @@ typedef struct {
 } message_t;
 
 // WebSocket functions
-int ws_handshake(SOCKET sock);
-ssize_t ws_send_message(SOCKET sock, message_t *msg);
-ssize_t ws_recv_message(SOCKET sock, message_t *msg);
-int ws_send_frame(SOCKET sock, uint8_t opcode, const char *payload, size_t len);
-int ws_recv_frame(SOCKET sock, ws_frame_t *frame, char **payload);
-void ws_close(SOCKET sock, uint16_t code);
+int ws_handshake(int sock);
+ssize_t ws_send_message(int sock, message_t *msg);
+ssize_t ws_recv_message(int sock, message_t *msg);
+int ws_send_frame(int sock, uint8_t opcode, const char *payload, size_t len);
+int ws_recv_frame(int sock, ws_frame_t *frame, char **payload);
+void ws_close(int sock, uint16_t code);
 
 #endif
