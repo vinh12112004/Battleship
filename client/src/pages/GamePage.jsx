@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import NavBar from "../components/common/NavBar";
+import NavBar from "../components/common/Navbar";
 import GameBoard from "../components/game/GameBoard";
 import GameInfoPanel from "../components/game/GameInfoPanel";
 import GameChat from "../components/game/GameChat";

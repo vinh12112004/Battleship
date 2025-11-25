@@ -1,0 +1,28 @@
+# 1. Chọn base image Ubuntu
+FROM ubuntu:24.04
+
+# 2. Cài các gói cần thiết: gcc, make, pkg-config, libmongoc, libbson, cjson, ssl
+RUN apt-get update && apt-get install -y \
+    gcc \
+    make \
+    pkg-config \
+    libmongoc-1.0-0 \
+    libmongoc-dev \
+    libbson-1.0-0 \
+    libbson-dev \
+    libcjson-dev \
+    libssl-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. Tạo thư mục làm việc
+WORKDIR /app
+
+# 4. Copy toàn bộ source code vào container
+COPY . .
+
+# 5. Build project
+RUN make
+
+# 6. Chạy server
+CMD ["./server"]
