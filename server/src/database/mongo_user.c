@@ -52,8 +52,8 @@ user_t* user_create(const char *username, const char *email, const char *passwor
     
     // Add timestamps
     bson_t *now_time = bson_new();
-    BSON_APPEND_NOW_UTC(doc, "created_at");
-    BSON_APPEND_NOW_UTC(doc, "updated_at");
+    bson_append_date_time(doc, "created_at", -1, (int64_t)time(NULL) * 1000);
+    bson_append_date_time(doc, "updated_at", -1, (int64_t)time(NULL) * 1000);
     
     // Insert document
     bson_error_t error;
@@ -303,7 +303,7 @@ bool user_update_status(const char *username, const char *status) {
 
     BSON_APPEND_DOCUMENT_BEGIN(update, "$set", &child);
     BSON_APPEND_UTF8(&child, "status", status);
-    BSON_APPEND_NOW_UTC(&child, "updated_at");
+    bson_append_date_time(&child, "updated_at", -1, (int64_t)time(NULL) * 1000);
     bson_append_document_end(update, &child);
 
     bson_error_t error;

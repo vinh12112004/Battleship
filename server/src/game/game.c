@@ -27,7 +27,7 @@ bool game_create(const char *player1_id, const char *player2_id, char *out_game_
     BSON_APPEND_UTF8(doc, "player2_id", player2_id);
     BSON_APPEND_UTF8(doc, "state", "placing_ships");
     BSON_APPEND_UTF8(doc, "current_turn", player1_id);
-    BSON_APPEND_NOW_UTC(doc, "created_at");
+    bson_append_date_time(doc, "created_at", -1, (int64_t)time(NULL) * 1000);
     
     bson_error_t error;
     bool success = mongoc_collection_insert_one(collection, doc, NULL, NULL, &error);
