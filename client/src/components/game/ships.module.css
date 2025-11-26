@@ -1,0 +1,359 @@
+Modern animations for naval ships
+
+.ship {
+  filter: drop-shadow(0 0 8px rgba(0, 217, 255, 0.3));
+}
+
+/* Hull and structure animations */
+.hullGlow {
+  animation: hullPulse 2s ease-in-out infinite;
+}
+
+@keyframes hullPulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(0, 217, 255, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(0, 217, 255, 0.7));
+  }
+}
+
+/* Radar spinning animation */
+.radarSpin {
+  animation: radarRotate 3s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes radarRotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Radar pulse effect */
+.radarPulse {
+  animation: radarFlash 1.5s ease-in-out infinite;
+}
+
+@keyframes radarFlash {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Window glow effect */
+.windowGlow {
+  animation: windowFlicker 3s ease-in-out infinite;
+}
+
+@keyframes windowFlicker {
+  0%,
+  100% {
+    opacity: 0.5;
+    filter: drop-shadow(0 0 2px currentColor);
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px currentColor);
+  }
+}
+
+/* Energy line animation */
+.energyLine {
+  animation: energyFlow 2s ease-in-out infinite;
+  stroke-dasharray: 30;
+  stroke-dashoffset: 0;
+}
+
+@keyframes energyFlow {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 60;
+  }
+}
+
+/* Runway animation */
+.runwayAnimated {
+  animation: runwayScroll 1.5s linear infinite;
+  stroke-dasharray: 35;
+  stroke-dashoffset: 0;
+}
+
+@keyframes runwayScroll {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -35;
+  }
+}
+
+/* Elevator pulse */
+.elevatorPulse {
+  animation: elevatorLift 2s ease-in-out infinite;
+}
+
+@keyframes elevatorLift {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: translateY(0px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Island pulse */
+.islandPulse {
+  animation: islandGlow 2.5s ease-in-out infinite;
+}
+
+@keyframes islandGlow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(0, 217, 255, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(255, 107, 53, 0.5));
+  }
+}
+
+/* Barrel glow effect */
+.barrelGlow {
+  animation: barrelCharge 1s ease-in-out infinite;
+}
+
+@keyframes barrelCharge {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(255, 184, 0, 0.8));
+  }
+}
+
+/* Secondary gun glow */
+.secondaryGlow {
+  animation: gunCharge 1.5s ease-in-out infinite;
+}
+
+@keyframes gunCharge {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(255, 107, 53, 0.6));
+  }
+}
+
+/* Stealth pulse */
+.stealthPulse {
+  animation: stealthEcho 2s ease-in-out infinite;
+}
+
+@keyframes stealthEcho {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+/* VLS pulse */
+.vlsPulse {
+  animation: vlsCharge 1s ease-in-out infinite;
+}
+
+@keyframes vlsCharge {
+  0%,
+  100% {
+    opacity: 0.6;
+    filter: drop-shadow(0 0 2px rgba(0, 255, 136, 0.4));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(0, 255, 136, 0.8));
+  }
+}
+
+/* CIWS rotation */
+.ciws {
+  animation: ciWSpin 2s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes ciWSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Smoke glow */
+.smokeGlow {
+  animation: smokeRise 2s ease-in-out infinite;
+}
+
+@keyframes smokeRise {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: translateY(0px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Periscope movement */
+.periscope {
+  animation: periscopeMove 3s ease-in-out infinite;
+}
+
+@keyframes periscopeMove {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(0, 217, 255, 0.6));
+  }
+}
+
+/* Propeller rotation */
+.propeller {
+  animation: propellerSpin 0.8s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes propellerSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Rudder movement */
+.rudderMove {
+  animation: rudderWave 2s ease-in-out infinite;
+}
+
+@keyframes rudderWave {
+  0%,
+  100% {
+    transform: rotate(0deg);
+    opacity: 0.7;
+  }
+  50% {
+    transform: rotate(5deg);
+    opacity: 1;
+  }
+}
+
+/* Torpedo glow */
+.torpedoGlow {
+  animation: torpedoCharge 1.5s ease-in-out infinite;
+}
+
+@keyframes torpedoCharge {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+    filter: drop-shadow(0 0 4px rgba(255, 107, 53, 0.6));
+  }
+}
+
+/* Mast glow */
+.mastGlow {
+  animation: mastEcho 2s ease-in-out infinite;
+}
+
+@keyframes mastEcho {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(255, 184, 0, 0.6));
+  }
+}
+
+/* Gun pulse */
+.gunPulse {
+  animation: gunReady 1s ease-in-out infinite;
+}
+
+@keyframes gunReady {
+  0%,
+  100% {
+    opacity: 0.7;
+    r: 4;
+  }
+  50% {
+    opacity: 1;
+    r: 5;
+    filter: drop-shadow(0 0 4px rgba(255, 0, 107, 0.6));
+  }
+}
+
+/* Navigation lights */
+.navLight {
+  animation: navFlash 1s step-start infinite;
+}
+
+@keyframes navFlash {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0.3;
+  }
+}
+
+/* Bridge pulse */
+.bridgePulse {
+  animation: bridgeGlow 2s ease-in-out infinite;
+}
+
+@keyframes bridgeGlow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(0, 217, 255, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(255, 0, 107, 0.4));
+  }
+}

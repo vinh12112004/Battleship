@@ -7,7 +7,7 @@ import GameBoard from "../components/game/GameBoard";
 import GameInfoPanel from "../components/game/GameInfoPanel";
 import GameChat from "../components/game/GameChat";
 import { useGame } from "@/hooks/useGame";
-
+import ShipDisplay from "../components/game/ShipDisplay.jsx";
 export default function GamePage() {
   const { id } = useParams();
   const { gameState, makeMove, sendMessage, isConnected } = useGame();
@@ -54,6 +54,7 @@ export default function GamePage() {
           {/* Game boards */}
           <div className="lg:col-span-3">
             <GameBoard gameState={localGameState} onMove={handleMove} />
+            <ShipDisplay />
           </div>
 
           {/* Right sidebar */}
