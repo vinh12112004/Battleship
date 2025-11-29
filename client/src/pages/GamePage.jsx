@@ -9,13 +9,13 @@ import GameChat from "../components/game/GameChat";
 import { useGame } from "@/hooks/useGame";
 import BattleshipSeaBackground from "../components/game/BattleshipSeaBackground.jsx";
 import ShipDock from "../components/game/ShipDock.jsx";
-
+import { wsService, MSG_TYPES } from "@/services/wsService";
 const SHIP_DEFINITIONS = [
     { id: "carrier", size: 5 },
     { id: "battleship", size: 4 },
     { id: "destroyer", size: 3 },
-    { id: "submarine", size: 3 },
-    { id: "patrol", size: 2 },
+    { id: "submarine", size: 2 },
+    { id: "patrol", size: 1 },
 ];
 const GRID_SIZE = 10;
 // Định nghĩa số lượng thuyền cần đặt
@@ -127,17 +127,22 @@ export default function GamePage() {
 
     // 3. Hàm xử lý khi nhấn nút Ready
     const handleReadyClick = () => {
-        if (isConnected && isReadyToStart) {
-            // **Hành động gửi tín hiệu Ready lên Server**
-            // Bạn cần thay thế hàm này bằng hàm API thực tế để bắt đầu game
-            sendMessage("SYSTEM:PLAYER_READY");
+        if (!isConnected || !isReadyToStart) return;
 
-            // Cập nhật trạng thái cục bộ để hiển thị thông báo chờ
-            setLocalGameState((prev) => ({
-                ...prev,
-                phase: "waiting_for_opponent",
-            }));
-        }
+        wsService.sendMessage(MSG_TYPES.PLAYER_READY, {
+            game_id: id,
+            board_state: localGameState.yourBoard,
+        });
+        console.log(
+            "Player is ready with board:",
+            localGameState.yourBoard,
+            "id:",
+            id
+        );
+        setLocalGameState((prev) => ({
+            ...prev,
+            phase: "waiting_for_opponent",
+        }));
     };
 
     const handleMove = (row, col) => {
@@ -253,11 +258,11 @@ export default function GamePage() {
                         {/* Right sidebar */}
                         <div className="space-y-6">
                             <GameInfoPanel gameId={id} />
-                            <GameChat
+                            {/* <GameChat
                                 gameId={id}
                                 messages={localGameState?.messages || []}
                                 onSendMessage={sendMessage}
-                            />
+                            /> */}
                         </div>
                     </div>
                 </div>

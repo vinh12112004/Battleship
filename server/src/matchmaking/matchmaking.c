@@ -123,12 +123,13 @@ void matcher_find_match() {
             message_t msg1 = {0};
             msg1.type = MSG_START_GAME;
             strncpy(msg1.payload.start_game.opponent, p2->user_id, 31);
-            // ✅ TODO: Thêm gameId vào payload (cần update struct start_game_payload trong ws_protocol.h)
+            strncpy(msg1.payload.start_game.game_id, game_id, 63);
             ws_send_message(p1->socket, &msg1);
             
             message_t msg2 = {0};
             msg2.type = MSG_START_GAME;
             strncpy(msg2.payload.start_game.opponent, p1->user_id, 31);
+            strncpy(msg2.payload.start_game.game_id, game_id, 63);
             ws_send_message(p2->socket, &msg2);
             
             log_info("Game started: %s", game_id);

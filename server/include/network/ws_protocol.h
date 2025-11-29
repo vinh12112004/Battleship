@@ -52,10 +52,11 @@ typedef struct { char token[MAX_JWT_LEN]; char username[32]; } auth_success_payl
 typedef struct { char reason[64]; } auth_failed_payload;
 typedef struct { int x; int y; } move_payload;
 typedef struct { int x; int y; int hit; char sunk[32]; } move_result_payload;
-typedef struct { char opponent[32]; } start_game_payload;
+typedef struct { char opponent[32]; char game_id[64]; } start_game_payload;
 typedef struct { char message[128]; } chat_payload;
 typedef struct { 
     uint8_t board_state[BOARD_SIZE]; 
+    char game_id[65];
 } ready_payload;
 
 // Message structure
@@ -70,6 +71,7 @@ typedef struct {
         move_result_payload move_res;
         start_game_payload start_game;
         chat_payload chat;
+        ready_payload ready;
     } payload;
 } message_t;
 
