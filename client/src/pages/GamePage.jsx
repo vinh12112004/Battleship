@@ -1,30 +1,144 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import NavBar from "../components/common/Navbar";
 import GameBoard from "../components/game/GameBoard";
 import GameInfoPanel from "../components/game/GameInfoPanel";
 import GameChat from "../components/game/GameChat";
 import { useGame } from "@/hooks/useGame";
-import ShipDisplay from "../components/game/ShipDisplay.jsx";
 import BattleshipSeaBackground from "../components/game/BattleshipSeaBackground.jsx";
+import ShipDock from "../components/game/ShipDock.jsx";
+
+const SHIP_DEFINITIONS = [
+    { id: "carrier", size: 5 },
+    { id: "battleship", size: 4 },
+    { id: "destroyer", size: 3 },
+    { id: "submarine", size: 3 },
+    { id: "patrol", size: 2 },
+];
+const GRID_SIZE = 10;
+// Định nghĩa số lượng thuyền cần đặt
+const REQUIRED_SHIP_COUNT = SHIP_DEFINITIONS.length;
 
 export default function GamePage() {
     const { id } = useParams();
+    // Giả định `useGame` có các hàm cần thiết (makeMove, sendMessage)
     const { gameState, makeMove, sendMessage, isConnected } = useGame();
+
     const [localGameState, setLocalGameState] = useState({
-        yourBoard: Array(100).fill("water"),
-        opponentBoard: Array(100).fill("hidden"),
+        yourBoard: Array(GRID_SIZE * GRID_SIZE).fill(0),
+        opponentBoard: Array(GRID_SIZE * GRID_SIZE).fill("hidden"),
         ships: [],
-        phase: "setup",
+        phase: "placing_ships",
     });
+    // Trạng thái cục bộ cho việc kéo thả (đã giữ nguyên)
+    const [draggingShip, setDraggingShip] = useState(null);
 
     useEffect(() => {
         if (gameState) {
             setLocalGameState(gameState);
         }
     }, [gameState]);
+
+    // Hàm kiểm tra xem vị trí có hợp lệ để đặt thuyền không (đã giữ nguyên)
+    const isValidPlacement = (board, row, col, size, orientation) => {
+        if (orientation !== "horizontal") return false;
+        if (row < 0 || row >= GRID_SIZE || col < 0 || col + size > GRID_SIZE) {
+            return false;
+        }
+        for (let i = 0; i < size; i++) {
+            // Kiểm tra trên board đang được reset về 0 (đơn giản hóa)
+            if (board[row * GRID_SIZE + col + i] !== 0) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    // Hàm xử lý đặt thuyền (đã giữ nguyên)
+    const handlePlaceShip = useCallback((ship, row, col) => {
+        setLocalGameState((prev) => {
+            const shipIndex = SHIP_DEFINITIONS.findIndex(
+                (s) => s.id === ship.id
+            );
+            const size = SHIP_DEFINITIONS[shipIndex].size;
+
+            // Loại bỏ thuyền cũ và reset board
+            const newShips = prev.ships.filter((s) => s.id !== ship.id);
+            let finalBoard = Array(GRID_SIZE * GRID_SIZE).fill(0);
+
+            const newPlacement = {
+                id: ship.id,
+                size: size,
+                startRow: row,
+                startCol: col,
+                orientation: "horizontal",
+            };
+
+            // Tạm thời tạo board chứa các thuyền CŨ để kiểm tra vị trí mới
+            newShips.forEach((s) => {
+                for (let i = 0; i < s.size; i++) {
+                    finalBoard[s.startRow * GRID_SIZE + s.startCol + i] =
+                        s.size;
+                }
+            });
+
+            // Kiểm tra vị trí thuyền MỚI trên board đã có thuyền cũ
+            if (isValidPlacement(finalBoard, row, col, size, "horizontal")) {
+                // Đặt thuyền mới vào danh sách
+                newShips.push(newPlacement);
+
+                // Tái tạo lại finalBoard với TẤT CẢ các thuyền đã đặt
+                finalBoard.fill(0);
+                newShips.forEach((s) => {
+                    for (let i = 0; i < s.size; i++) {
+                        finalBoard[s.startRow * GRID_SIZE + s.startCol + i] =
+                            s.size;
+                    }
+                });
+
+                return {
+                    ...prev,
+                    yourBoard: finalBoard,
+                    ships: newShips,
+                };
+            }
+
+            // Nếu không hợp lệ, trả lại board cũ (chưa reset)
+            return prev;
+        });
+
+        setDraggingShip(null);
+    }, []);
+
+    // Hàm được truyền vào ShipDock để lưu thuyền đang kéo
+    const handleShipDragStart = (ship) => {
+        setDraggingShip(ship);
+    };
+
+    // Lấy ID của các thuyền đã đặt để truyền vào ShipDock
+    const placedShipIds = localGameState.ships.map((s) => s.id);
+
+    // 2. Logic kiểm tra sẵn sàng chơi
+    const isReadyToStart =
+        localGameState.phase === "placing_ships" &&
+        placedShipIds.length === REQUIRED_SHIP_COUNT;
+
+    // 3. Hàm xử lý khi nhấn nút Ready
+    const handleReadyClick = () => {
+        if (isConnected && isReadyToStart) {
+            // **Hành động gửi tín hiệu Ready lên Server**
+            // Bạn cần thay thế hàm này bằng hàm API thực tế để bắt đầu game
+            sendMessage("SYSTEM:PLAYER_READY");
+
+            // Cập nhật trạng thái cục bộ để hiển thị thông báo chờ
+            setLocalGameState((prev) => ({
+                ...prev,
+                phase: "waiting_for_opponent",
+            }));
+        }
+    };
 
     const handleMove = (row, col) => {
         if (isConnected) {
@@ -83,8 +197,57 @@ export default function GamePage() {
                             <GameBoard
                                 gameState={localGameState}
                                 onMove={handleMove}
+                                onPlaceShip={handlePlaceShip}
+                                GRID_SIZE={GRID_SIZE}
                             />
-                            <ShipDisplay />
+
+                            {/* Hiển thị ShipDock chỉ trong giai đoạn đặt thuyền */}
+                            {localGameState.phase === "placing_ships" && (
+                                <ShipDock
+                                    placedShips={placedShipIds}
+                                    onShipDragStart={handleShipDragStart}
+                                />
+                            )}
+
+                            {/* 4. Logic hiển thị nút READY và trạng thái đặt thuyền */}
+                            <div className="mt-4 text-center">
+                                {localGameState.phase === "placing_ships" &&
+                                    isReadyToStart && (
+                                        <button
+                                            onClick={handleReadyClick}
+                                            disabled={!isConnected}
+                                            className="
+                                            px-8 py-3 text-xl font-bold rounded-lg
+                                            text-white bg-green-600
+                                            hover:bg-green-500 transition duration-200
+                                            shadow-lg shadow-green-900/50
+                                            disabled:bg-gray-600 disabled:cursor-not-allowed
+                                            tracking-widest uppercase
+                                        "
+                                        >
+                                            {isConnected
+                                                ? "BATTLE READY"
+                                                : "CONNECTING..."}
+                                        </button>
+                                    )}
+                                {/* Hiển thị tiến trình đặt thuyền */}
+                                {localGameState.phase === "placing_ships" &&
+                                    !isReadyToStart && (
+                                        <p className="text-lg text-cyan-400/80 font-mono mt-4">
+                                            Đang đặt thuyền:{" "}
+                                            {placedShipIds.length}/
+                                            {REQUIRED_SHIP_COUNT} tàu đã được
+                                            đặt.
+                                        </p>
+                                    )}
+                                {/* Thông báo chờ đối thủ sau khi nhấn Ready */}
+                                {localGameState.phase ===
+                                    "waiting_for_opponent" && (
+                                    <p className="text-lg text-yellow-400 font-mono mt-4 animate-pulse">
+                                        Đã sẵn sàng. Đang chờ đối thủ...
+                                    </p>
+                                )}
+                            </div>
                         </div>
 
                         {/* Right sidebar */}
