@@ -18,6 +18,7 @@ void handle_player_move(int client_sock, move_payload *move);
 void handle_chat(int client_sock, chat_payload *chat);
 void handle_logout(int client_sock, message_t *msg);
 int check_token(int client_sock, const char *token, auth_user_t *out_user);
+void handle_player_ready(int client_sock, message_t *msg);
 
 
 #endif

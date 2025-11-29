@@ -67,6 +67,10 @@ void handle_message(int client_sock, message_t *msg) {
         case MSG_LEAVE_QUEUE:
             handle_leave_queue(client_sock, msg->token);
             break;
+        case MSG_PLAYER_READY:
+            handle_player_ready(client_sock, msg);
+
+            break;
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);
             break;
@@ -257,5 +261,28 @@ void handle_leave_queue(int client_sock, const char *token) {
     matcher_remove_from_queue(user_id);
     log_info("Player %s left queue", user_id);
     
+    free(user_id);
+}
+
+void handle_player_ready(int client_sock, message_t *msg) {
+    // Verify token
+    char *user_id = jwt_verify(msg->token);
+    if (!user_id) {
+        log_error("Invalid token in PLAYER_READY");
+        return;
+    }
+
+    // Lấy dữ liệu payload
+    const char *game_id = msg->payload.ready.game_id;
+    const uint8_t *board = msg->payload.ready.board_state;
+
+    log_info("Player %s READY for game %s", user_id, game_id);
+
+    // Gọi game logic nhưng KHÔNG gửi phản hồi
+    if (!game_set_player_ready(game_id, user_id, board)) {
+        log_error("Failed to set READY for player %s", user_id);
+        // Không gửi message lại
+    }
+
     free(user_id);
 }

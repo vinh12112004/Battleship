@@ -2,6 +2,8 @@
 #define WS_PROTOCOL_H
 
 #define MAX_JWT_LEN 512
+#define GRID_SIZE 10
+#define BOARD_SIZE (GRID_SIZE * GRID_SIZE)
 
 #include <stdint.h>
 #include <sys/socket.h>
@@ -40,7 +42,8 @@ typedef enum {
     MSG_CHAT,
     MSG_LOGOUT,
     MSG_PING = 13,    
-    MSG_PONG = 14 
+    MSG_PONG = 14,
+    MSG_PLAYER_READY
 } msg_type;
 
 // Payload structs
@@ -49,8 +52,12 @@ typedef struct { char token[MAX_JWT_LEN]; char username[32]; } auth_success_payl
 typedef struct { char reason[64]; } auth_failed_payload;
 typedef struct { int x; int y; } move_payload;
 typedef struct { int x; int y; int hit; char sunk[32]; } move_result_payload;
-typedef struct { char opponent[32]; } start_game_payload;
+typedef struct { char opponent[32]; char game_id[64]; } start_game_payload;
 typedef struct { char message[128]; } chat_payload;
+typedef struct { 
+    uint8_t board_state[BOARD_SIZE]; 
+    char game_id[65];
+} ready_payload;
 
 // Message structure
 typedef struct {
@@ -64,6 +71,7 @@ typedef struct {
         move_result_payload move_res;
         start_game_payload start_game;
         chat_payload chat;
+        ready_payload ready;
     } payload;
 } message_t;
 
