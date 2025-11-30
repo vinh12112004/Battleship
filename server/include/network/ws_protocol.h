@@ -40,8 +40,16 @@ typedef enum {
     MSG_CHAT,
     MSG_LOGOUT,
     MSG_PING = 13,    
-    MSG_PONG = 14 
+    MSG_PONG = 14,
+    MSG_PLACE_SHIP = 15
 } msg_type;
+
+typedef struct {
+    int ship_type;      // 5=Carrier, 4=Battleship, 3=Cruiser/Sub, 2=Destroyer
+    int row;
+    int col;
+    uint8_t is_horizontal;  // 1=horizontal, 0=vertical
+} place_ship_payload;
 
 // Payload structs
 typedef struct { char username[32]; char password[32]; } auth_payload;
@@ -64,6 +72,7 @@ typedef struct {
         move_result_payload move_res;
         start_game_payload start_game;
         chat_payload chat;
+        place_ship_payload place_ship;
     } payload;
 } message_t;
 

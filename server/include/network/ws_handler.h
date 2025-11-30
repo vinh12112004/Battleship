@@ -16,6 +16,7 @@ void handle_join_queue(int client_sock, const char *token);
 void handle_leave_queue(int client_sock, const char *token);
 void handle_player_move(int client_sock, move_payload *move);
 void handle_chat(int client_sock, chat_payload *chat);
+void handle_place_ship(int client_sock, place_ship_payload *payload, const char *token);
 void handle_logout(int client_sock, message_t *msg);
 int check_token(int client_sock, const char *token, auth_user_t *out_user);
 

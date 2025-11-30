@@ -118,6 +118,13 @@ void matcher_find_match() {
                 log_error("Failed to create game for %s vs %s", p1->user_id, p2->user_id);
                 continue;
             }
+
+            game_session_t *game = game_get(game_id);
+            if (game) {
+                game->player1_socket = p1->socket;
+                game->player2_socket = p2->socket;
+                log_info("Sockets assigned: player1=%d, player2=%d", p1->socket, p2->socket);
+            }
             
             // Gửi START_GAME message cho cả 2 players
             message_t msg1 = {0};

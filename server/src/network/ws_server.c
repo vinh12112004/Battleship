@@ -2,7 +2,7 @@
 #include "network/ws_protocol.h"
 #include "network/ws_handler.h"
 #include "utils/logger.h"
-
+#include "matchmaking/matcher.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +14,61 @@
 #include <sys/time.h>
 
 #define MAX_CLIENTS 100
+
+typedef struct {
+    int socket;
+    char user_id[64];
+    bool authenticated;
+} client_info_t;
+
+static client_info_t g_clients[MAX_CLIENTS];
+static pthread_mutex_t g_clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// ✅ Register client khi login thành công
+void client_register(int client_sock, const char *user_id) {
+    pthread_mutex_lock(&g_clients_mutex);
+    
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_clients[i].socket == 0) {
+            g_clients[i].socket = client_sock;
+            strncpy(g_clients[i].user_id, user_id, 63);
+            g_clients[i].user_id[63] = '\0';
+            g_clients[i].authenticated = true;
+            log_info("[CLIENT] Registered: socket=%d, user_id=%s", client_sock, user_id);
+            break;
+        }
+    }
+    
+    pthread_mutex_unlock(&g_clients_mutex);
+}
+
+// Cleanup khi disconnect
+static void client_cleanup(int client_sock) {
+    pthread_mutex_lock(&g_clients_mutex);
+    
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_clients[i].socket == client_sock) {
+            if (g_clients[i].authenticated) {
+                log_info("[CLEANUP] Client socket=%d, user_id=%s", 
+                         client_sock, g_clients[i].user_id);
+                
+                // Xóa khỏi matchmaking queue
+                matcher_remove_from_queue(g_clients[i].user_id);
+                
+                // TODO: Update user status to offline in DB
+                // user_update_status(g_clients[i].user_id, "offline");
+            }
+            
+            // Clear client info
+            g_clients[i].socket = 0;
+            g_clients[i].user_id[0] = '\0';
+            g_clients[i].authenticated = false;
+            break;
+        }
+    }
+    
+    pthread_mutex_unlock(&g_clients_mutex);
+}
 
 // ====================== Thread client ======================
 void* client_thread(void* arg) {
@@ -62,9 +117,12 @@ void* client_thread(void* arg) {
         log_info("Message handled successfully for client %d, waiting for next message...", client_sock);
     }
 
-    log_info("Client %d disconnected", client_sock);
-    ws_close(client_sock, 1000); // Normal closure
+    log_info("[DISCONNECT] Client %d disconnecting, cleaning up...", client_sock);
+    client_cleanup(client_sock);
+    
     close(client_sock);
+    log_info("Client %d thread terminated", client_sock);
+    
     return NULL;
 }
 
@@ -111,7 +169,7 @@ void start_ws_server(uint16_t port) {
     if (server_sock < 0) return;
 
     log_info("WebSocket server ready to accept connections");
-
+    memset(g_clients, 0, sizeof(g_clients));
     while (1) {
         struct sockaddr_in client_addr;
         socklen_t addr_len = sizeof(client_addr);

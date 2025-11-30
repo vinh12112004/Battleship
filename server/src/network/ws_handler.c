@@ -1,4 +1,5 @@
 #include "network/ws_handler.h"
+#include "network/ws_server.h"
 #include "auth/auth.h"
 #include "game/game.h"
 #include "matchmaking/matcher.h"
@@ -6,7 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "auth/jwt.h"
-
+#include "game/game.h"
+#include "game/game_board.h"
 
 void handle_message(int client_sock, message_t *msg) {
     log_debug("Handling WebSocket message type=%d for client %d", msg->type, client_sock);
@@ -20,6 +22,9 @@ void handle_message(int client_sock, message_t *msg) {
         case MSG_PLAYER_MOVE:
         case MSG_CHAT:
         case MSG_LOGOUT:
+            requires_auth = 1;
+            break;
+        case MSG_PLACE_SHIP:
             requires_auth = 1;
             break;
         default:
@@ -67,6 +72,9 @@ void handle_message(int client_sock, message_t *msg) {
         case MSG_LEAVE_QUEUE:
             handle_leave_queue(client_sock, msg->token);
             break;
+        case MSG_PLACE_SHIP:
+            handle_place_ship(client_sock, &msg->payload.place_ship, msg->token);
+            break;
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);
             break;
@@ -100,6 +108,7 @@ void handle_register(int client_sock, auth_payload *auth) {
         resp.payload.auth_suc.token[MAX_JWT_LEN - 1] = '\0';
         strncpy(resp.payload.auth_suc.username, res->user->username, 31);
         resp.payload.auth_suc.username[31] = '\0';
+        client_register(client_sock, res->user->id);
         log_info("Registration successful for %s", auth->username);
     } else {
         resp.type = MSG_AUTH_FAILED;
@@ -131,7 +140,7 @@ void handle_login(int client_sock, auth_payload *auth) {
         resp.payload.auth_suc.token[MAX_JWT_LEN - 1] = '\0';
         strncpy(resp.payload.auth_suc.username, res->user->username, 31);
         resp.payload.auth_suc.username[31] = '\0';
-        
+        client_register(client_sock, res->user->id);
         log_info("Login successful for %s, sending response...", auth->username);
     } else {
         resp.type = MSG_AUTH_FAILED;
@@ -177,8 +186,60 @@ void handle_logout(int client_sock, message_t *msg) {
 // }
 
 void handle_player_move(int client_sock, move_payload *move) {
-    log_info("Player move from client %d: (%d, %d)", client_sock, move->x, move->y);
-    // Call game module, send move_result
+    // TODO: Get token from message to identify player
+    char *user_id = ""; // Extract from token
+    
+    // Find game session
+    game_session_t *game = game_find_by_player(user_id);
+    if (!game) {
+        log_error("No active game for player: %s", user_id);
+        return;
+    }
+    
+    // Validate move
+    if (!game_is_player_turn(game->game_id, user_id)) {
+        log_warn("Not player's turn: %s", user_id);
+        
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "Not your turn", 63);
+        ws_send_message(client_sock, &resp);
+        return;
+    }
+    
+    // Process shot
+    shot_result_t result = game_process_shot(game->game_id, user_id, move->y, move->x);
+    
+    // Send result to both players
+    message_t msg1 = {0};
+    msg1.type = MSG_MOVE_RESULT;
+    msg1.payload.move_res.x = move->x;
+    msg1.payload.move_res.y = move->y;
+    msg1.payload.move_res.hit = result.is_hit ? 1 : 0;
+    
+    if (result.is_sunk) {
+        strncpy(msg1.payload.move_res.sunk, ship_type_to_string(result.sunk_ship_type), 31);
+    }
+    
+    // Send to shooter
+    ws_send_message(client_sock, &msg1);
+    
+    // Send to opponent
+    int opponent_sock = (strcmp(game->player1_id, user_id) == 0) ? 
+                        game->player2_socket : game->player1_socket;
+    ws_send_message(opponent_sock, &msg1);
+    
+    // Check game over
+    if (result.game_over) {
+        message_t game_over = {0};
+        game_over.type = MSG_GAME_OVER;
+        
+        ws_send_message(client_sock, &game_over);
+        ws_send_message(opponent_sock, &game_over);
+    }
+    
+    log_info("Move processed: (%d, %d) by %s, result: %s", 
+             move->x, move->y, user_id, result.is_hit ? "HIT" : "MISS");
 }
 
 void handle_chat(int client_sock, chat_payload *chat) {
@@ -257,5 +318,101 @@ void handle_leave_queue(int client_sock, const char *token) {
     matcher_remove_from_queue(user_id);
     log_info("Player %s left queue", user_id);
     
+    free(user_id);
+}
+
+void handle_place_ship(int client_sock, place_ship_payload *payload, const char *token) {
+    // Verify token
+    char *user_id = jwt_verify(token);
+    if (!user_id) {
+        log_warn("Invalid token for place ship");
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
+        ws_send_message(client_sock, &resp);
+        return;
+    }
+    
+    log_info("Player %s placing ship: type=%d, pos=(%d,%d), horizontal=%d",
+             user_id, payload->ship_type, payload->row, payload->col, payload->is_horizontal);
+    
+    // Find active game for this player
+    game_session_t *game = game_find_by_player(user_id);
+    if (!game) {
+        log_error("No active game found for player: %s", user_id);
+        
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "No active game", 63);
+        ws_send_message(client_sock, &resp);
+        
+        free(user_id);
+        return;
+    }
+    
+    // Validate ship type
+    ship_type_t ship_type;
+    switch (payload->ship_type) {
+        case 5: ship_type = SHIP_CARRIER; break;
+        case 4: ship_type = SHIP_BATTLESHIP; break;
+        case 3: ship_type = SHIP_CRUISER; break;  // or SUBMARINE
+        case 31: ship_type = SHIP_SUBMARINE; break;
+        case 2: ship_type = SHIP_DESTROYER; break;
+        default:
+            log_error("Invalid ship type: %d", payload->ship_type);
+            
+            message_t resp = {0};
+            resp.type = MSG_AUTH_FAILED;
+            strncpy(resp.payload.auth_fail.reason, "Invalid ship type", 63);
+            ws_send_message(client_sock, &resp);
+            
+            free(user_id);
+            return;
+    }
+    
+    // Place ship
+    bool success = game_place_ship(
+        game->game_id,
+        user_id,
+        ship_type,
+        payload->row,
+        payload->col,
+        payload->is_horizontal
+    );
+    
+    message_t resp = {0};
+    
+    if (success) {
+        resp.type = MSG_AUTH_SUCCESS;  // Or create MSG_PLACE_SHIP_SUCCESS
+        log_info("Ship placed successfully for player %s", user_id);
+        
+        // Check if both players ready
+        if (game->player1_ready && game->player2_ready) {
+            log_info("Both players ready! Game %s starting...", game->game_id);
+            
+            // Send game start notification to both players
+            message_t start_msg = {0};
+            start_msg.type = MSG_START_GAME;
+            strncpy(start_msg.payload.start_game.opponent, 
+                    strcmp(game->player1_id, user_id) == 0 ? game->player2_id : game->player1_id,
+                    31);
+            
+            ws_send_message(client_sock, &start_msg);
+            
+            // Send to opponent
+            int opponent_sock = (strcmp(game->player1_id, user_id) == 0) ?
+                                game->player2_socket : game->player1_socket;
+            if (opponent_sock > 0) {
+                strncpy(start_msg.payload.start_game.opponent, user_id, 31);
+                ws_send_message(opponent_sock, &start_msg);
+            }
+        }
+    } else {
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "Failed to place ship (overlap/out of bounds)", 63);
+        log_warn("Failed to place ship for player %s", user_id);
+    }
+    
+    ws_send_message(client_sock, &resp);
     free(user_id);
 }

@@ -1,665 +1,747 @@
 <!DOCTYPE html>
 <html lang="vi">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Battleship WebSocket Test Client</title>
-        <style>
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            body {
-                font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                padding: 20px;
-            }
-            .container {
-                max-width: 800px;
-                margin: 0 auto;
-                background: white;
-                border-radius: 15px;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-                overflow: hidden;
-            }
-            .header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 30px;
-                text-align: center;
-            }
-            .header h1 {
-                font-size: 2em;
-                margin-bottom: 10px;
-            }
-            .status {
-                padding: 15px 30px;
-                background: #f8f9fa;
-                border-bottom: 2px solid #e9ecef;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .status-indicator {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-            }
-            .status-dot {
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                background: #dc3545;
-                animation: pulse 2s infinite;
-            }
-            .status-dot.connected {
-                background: #28a745;
-            }
-            @keyframes pulse {
-                0%,
-                100% {
-                    opacity: 1;
-                }
-                50% {
-                    opacity: 0.5;
-                }
-            }
-            .content {
-                padding: 30px;
-            }
-            .connection-panel {
-                background: #f8f9fa;
-                padding: 20px;
-                border-radius: 10px;
-                margin-bottom: 20px;
-            }
-            .input-group {
-                display: flex;
-                gap: 10px;
-                margin-bottom: 15px;
-            }
-            input {
-                flex: 1;
-                padding: 12px 15px;
-                border: 2px solid #dee2e6;
-                border-radius: 8px;
-                font-size: 14px;
-                transition: border-color 0.3s;
-            }
-            input:focus {
-                outline: none;
-                border-color: #667eea;
-            }
-            button {
-                padding: 12px 25px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                font-weight: 600;
-                transition: transform 0.2s, box-shadow 0.2s;
-            }
-            button:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-            }
-            button:active {
-                transform: translateY(0);
-            }
-            button:disabled {
-                opacity: 0.5;
-                cursor: not-allowed;
-                transform: none;
-            }
-            .menu-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 15px;
-                margin-bottom: 20px;
-            }
-            .menu-button {
-                padding: 15px;
-                background: white;
-                border: 2px solid #dee2e6;
-                color: #495057;
-                transition: all 0.3s;
-            }
-            .menu-button:hover:not(:disabled) {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                border-color: transparent;
-            }
-            .log-panel {
-                background: #1e1e1e;
-                color: #d4d4d4;
-                padding: 20px;
-                border-radius: 10px;
-                height: 300px;
-                overflow-y: auto;
-                font-family: "Consolas", "Monaco", monospace;
-                font-size: 13px;
-                line-height: 1.6;
-            }
-            .log-entry {
-                margin-bottom: 8px;
-                padding: 5px;
-                border-left: 3px solid transparent;
-            }
-            .log-entry.info {
-                border-color: #17a2b8;
-            }
-            .log-entry.success {
-                border-color: #28a745;
-            }
-            .log-entry.error {
-                border-color: #dc3545;
-            }
-            .log-entry.warning {
-                border-color: #ffc107;
-            }
-            .timestamp {
-                color: #858585;
-                margin-right: 10px;
-            }
-            .modal {
-                display: none;
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.5);
-                justify-content: center;
-                align-items: center;
-                z-index: 1000;
-            }
-            .modal.active {
-                display: flex;
-            }
-            .modal-content {
-                background: white;
-                padding: 30px;
-                border-radius: 15px;
-                max-width: 400px;
-                width: 90%;
-            }
-            .modal-content h3 {
-                margin-bottom: 20px;
-                color: #667eea;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>🚢 Battleship WebSocket Client</h1>
-                <p>Test client cho C WebSocket Server</p>
-            </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battleship WebSocket Test Client</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+      }
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        text-align: center;
+      }
+      .header h1 {
+        font-size: 2em;
+        margin-bottom: 10px;
+      }
+      .status {
+        padding: 15px 30px;
+        background: #f8f9fa;
+        border-bottom: 2px solid #e9ecef;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .status-indicator {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .status-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #dc3545;
+        animation: pulse 2s infinite;
+      }
+      .status-dot.connected {
+        background: #28a745;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+      .content {
+        padding: 30px;
+      }
+      .connection-panel {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+      }
+      .input-group {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+      input {
+        flex: 1;
+        padding: 12px 15px;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s;
+      }
+      input:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+      button {
+        padding: 12px 25px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+      button:active {
+        transform: translateY(0);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .menu-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+      .menu-button {
+        padding: 15px;
+        background: white;
+        border: 2px solid #dee2e6;
+        color: #495057;
+        transition: all 0.3s;
+      }
+      .menu-button:hover:not(:disabled) {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-color: transparent;
+      }
+      .log-panel {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        padding: 20px;
+        border-radius: 10px;
+        height: 300px;
+        overflow-y: auto;
+        font-family: "Consolas", "Monaco", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .log-entry {
+        margin-bottom: 8px;
+        padding: 5px;
+        border-left: 3px solid transparent;
+      }
+      .log-entry.info {
+        border-color: #17a2b8;
+      }
+      .log-entry.success {
+        border-color: #28a745;
+      }
+      .log-entry.error {
+        border-color: #dc3545;
+      }
+      .log-entry.warning {
+        border-color: #ffc107;
+      }
+      .timestamp {
+        color: #858585;
+        margin-right: 10px;
+      }
+      .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+      .modal.active {
+        display: flex;
+      }
+      .modal-content {
+        background: white;
+        padding: 30px;
+        border-radius: 15px;
+        max-width: 400px;
+        width: 90%;
+      }
+      .modal-content h3 {
+        margin-bottom: 20px;
+        color: #667eea;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🚢 Battleship WebSocket Client</h1>
+        <p>Test client cho C WebSocket Server</p>
+      </div>
 
-            <div class="status">
-                <div class="status-indicator">
-                    <div class="status-dot" id="statusDot"></div>
-                    <span id="statusText">Disconnected</span>
-                </div>
-                <span id="currentUser"></span>
-            </div>
+      <div class="status">
+        <div class="status-indicator">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="statusText">Disconnected</span>
+        </div>
+        <span id="currentUser"></span>
+      </div>
 
-            <div class="content">
-                <div class="connection-panel">
-                    <div class="input-group">
-                        <input
-                            type="text"
-                            id="wsUrl"
-                            value="ws://localhost:8080"
-                            placeholder="WebSocket URL"
-                        />
-                        <button id="connectBtn" onclick="toggleConnection()">
-                            Connect
-                        </button>
-                    </div>
-                </div>
-
-                <div class="menu-grid">
-                    <button
-                        class="menu-button"
-                        onclick="showRegisterModal()"
-                        disabled
-                        id="btnRegister"
-                    >
-                        📝 Register
-                    </button>
-                    <button
-                        class="menu-button"
-                        onclick="showLoginModal()"
-                        disabled
-                        id="btnLogin"
-                    >
-                        🔐 Login
-                    </button>
-                    <button
-                        class="menu-button"
-                        onclick="joinQueue()"
-                        disabled
-                        id="btnJoinQueue"
-                    >
-                        🎮 Join Queue
-                    </button>
-                    <button
-                        class="menu-button"
-                        onclick="showMoveModal()"
-                        disabled
-                        id="btnMove"
-                    >
-                        🎯 Make Move
-                    </button>
-                    <button
-                        class="menu-button"
-                        onclick="showChatModal()"
-                        disabled
-                        id="btnChat"
-                    >
-                        💬 Chat
-                    </button>
-                    <button
-                        class="menu-button"
-                        onclick="logout()"
-                        disabled
-                        id="btnLogout"
-                    >
-                        🚪 Logout
-                    </button>
-                </div>
-
-                <div class="log-panel" id="logPanel"></div>
-            </div>
+      <div class="content">
+        <div class="connection-panel">
+          <div class="input-group">
+            <input
+              type="text"
+              id="wsUrl"
+              value="ws://localhost:8080"
+              placeholder="WebSocket URL"
+            />
+            <button id="connectBtn" onclick="toggleConnection()">
+              Connect
+            </button>
+          </div>
         </div>
 
-        <!-- Modals -->
-        <div class="modal" id="registerModal">
-            <div class="modal-content">
-                <h3>📝 Register Account</h3>
-                <div class="input-group">
-                    <input
-                        type="text"
-                        id="regUsername"
-                        placeholder="Username"
-                    />
-                </div>
-                <div class="input-group">
-                    <input
-                        type="password"
-                        id="regPassword"
-                        placeholder="Password"
-                    />
-                </div>
-                <div class="input-group">
-                    <button onclick="register()">Register</button>
-                    <button
-                        onclick="closeModal('registerModal')"
-                        style="background: #6c757d"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
+        <div class="menu-grid">
+          <button
+            class="menu-button"
+            onclick="showRegisterModal()"
+            disabled
+            id="btnRegister"
+          >
+            📝 Register
+          </button>
+          <button
+            class="menu-button"
+            onclick="showLoginModal()"
+            disabled
+            id="btnLogin"
+          >
+            🔐 Login
+          </button>
+          <button
+            class="menu-button"
+            onclick="joinQueue()"
+            disabled
+            id="btnJoinQueue"
+          >
+            🎮 Join Queue
+          </button>
+          <button
+            class="menu-button"
+            onclick="showMoveModal()"
+            disabled
+            id="btnMove"
+          >
+            🎯 Make Move
+          </button>
+          <button
+            class="menu-button"
+            onclick="showPlaceShipModal()"
+            disabled
+            id="btnPlaceShip"
+          >
+            🚢 Place Ship
+          </button>
+          <button
+            class="menu-button"
+            onclick="showChatModal()"
+            disabled
+            id="btnChat"
+          >
+            💬 Chat
+          </button>
+          <button
+            class="menu-button"
+            onclick="logout()"
+            disabled
+            id="btnLogout"
+          >
+            🚪 Logout
+          </button>
         </div>
 
-        <div class="modal" id="loginModal">
-            <div class="modal-content">
-                <h3>🔐 Login</h3>
-                <div class="input-group">
-                    <input
-                        type="text"
-                        id="loginUsername"
-                        placeholder="Username"
-                    />
-                </div>
-                <div class="input-group">
-                    <input
-                        type="password"
-                        id="loginPassword"
-                        placeholder="Password"
-                    />
-                </div>
-                <div class="input-group">
-                    <button onclick="login()">Login</button>
-                    <button
-                        onclick="closeModal('loginModal')"
-                        style="background: #6c757d"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
+        <div class="log-panel" id="logPanel"></div>
+      </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal" id="registerModal">
+      <div class="modal-content">
+        <h3>📝 Register Account</h3>
+        <div class="input-group">
+          <input type="text" id="regUsername" placeholder="Username" />
         </div>
-
-        <div class="modal" id="moveModal">
-            <div class="modal-content">
-                <h3>🎯 Make Move</h3>
-                <div class="input-group">
-                    <input
-                        type="number"
-                        id="moveX"
-                        placeholder="X (0-9)"
-                        min="0"
-                        max="9"
-                    />
-                    <input
-                        type="number"
-                        id="moveY"
-                        placeholder="Y (0-9)"
-                        min="0"
-                        max="9"
-                    />
-                </div>
-                <div class="input-group">
-                    <button onclick="makeMove()">Fire!</button>
-                    <button
-                        onclick="closeModal('moveModal')"
-                        style="background: #6c757d"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
+        <div class="input-group">
+          <input type="password" id="regPassword" placeholder="Password" />
         </div>
-
-        <div class="modal" id="chatModal">
-            <div class="modal-content">
-                <h3>💬 Send Message</h3>
-                <div class="input-group">
-                    <input
-                        type="text"
-                        id="chatMessage"
-                        placeholder="Type your message..."
-                    />
-                </div>
-                <div class="input-group">
-                    <button onclick="sendChat()">Send</button>
-                    <button
-                        onclick="closeModal('chatModal')"
-                        style="background: #6c757d"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
+        <div class="input-group">
+          <button onclick="register()">Register</button>
+          <button
+            onclick="closeModal('registerModal')"
+            style="background: #6c757d"
+          >
+            Cancel
+          </button>
         </div>
+      </div>
+    </div>
 
-        <script>
-            let ws = null;
-            let currentToken = "";
-            let currentUsername = "";
+    <div class="modal" id="loginModal">
+      <div class="modal-content">
+        <h3>🔐 Login</h3>
+        <div class="input-group">
+          <input type="text" id="loginUsername" placeholder="Username" />
+        </div>
+        <div class="input-group">
+          <input type="password" id="loginPassword" placeholder="Password" />
+        </div>
+        <div class="input-group">
+          <button onclick="login()">Login</button>
+          <button
+            onclick="closeModal('loginModal')"
+            style="background: #6c757d"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
 
-            const MSG_TYPE = {
-                REGISTER: 1,
-                LOGIN: 2,
-                AUTH_SUCCESS: 3,
-                AUTH_FAILED: 4,
-                JOIN_QUEUE: 5,
-                LEAVE_QUEUE: 6,
-                START_GAME: 7,
-                PLAYER_MOVE: 8,
-                MOVE_RESULT: 9,
-                GAME_OVER: 10,
-                CHAT: 11,
-                LOGOUT: 12,
-            };
+    <div class="modal" id="moveModal">
+      <div class="modal-content">
+        <h3>🎯 Make Move</h3>
+        <div class="input-group">
+          <input
+            type="number"
+            id="moveX"
+            placeholder="X (0-9)"
+            min="0"
+            max="9"
+          />
+          <input
+            type="number"
+            id="moveY"
+            placeholder="Y (0-9)"
+            min="0"
+            max="9"
+          />
+        </div>
+        <div class="input-group">
+          <button onclick="makeMove()">Fire!</button>
+          <button onclick="closeModal('moveModal')" style="background: #6c757d">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
 
-            const MESSAGE_SIZE = 1060; // msg_type(4)+token(512)+payload(544)
+    <div class="modal" id="chatModal">
+      <div class="modal-content">
+        <h3>💬 Send Message</h3>
+        <div class="input-group">
+          <input
+            type="text"
+            id="chatMessage"
+            placeholder="Type your message..."
+          />
+        </div>
+        <div class="input-group">
+          <button onclick="sendChat()">Send</button>
+          <button onclick="closeModal('chatModal')" style="background: #6c757d">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
 
-            // ================= Utils =================
-            function log(msg, type = "info") {
-                const logPanel = document.getElementById("logPanel");
-                const entry = document.createElement("div");
-                entry.className = `log-entry ${type}`;
-                const ts = new Date().toLocaleTimeString();
-                entry.innerHTML = `<span class="timestamp">[${ts}]</span>${msg}`;
-                logPanel.appendChild(entry);
-                logPanel.scrollTop = logPanel.scrollHeight;
+    <div class="modal" id="placeShipModal">
+      <div class="modal-content">
+        <h3>🚢 Place Ship</h3>
+        <div class="input-group">
+          <select id="shipType">
+            <option value="5">Carrier (5)</option>
+            <option value="4">Battleship (4)</option>
+            <option value="3">Cruiser (3)</option>
+            <option value="3">Submarine (3)</option>
+            <option value="2">Destroyer (2)</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <input
+            type="number"
+            id="shipRow"
+            placeholder="Row (0-9)"
+            min="0"
+            max="9"
+          />
+          <input
+            type="number"
+            id="shipCol"
+            placeholder="Col (0-9)"
+            min="0"
+            max="9"
+          />
+        </div>
+        <div class="input-group">
+          <label>
+            <input type="checkbox" id="shipHorizontal" checked />
+            Horizontal
+          </label>
+        </div>
+        <div class="input-group">
+          <button onclick="placeShip()">Place</button>
+          <button
+            onclick="closeModal('placeShipModal')"
+            style="background: #6c757d"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let ws = null;
+      let currentToken = "";
+      let currentUsername = "";
+
+      const MSG_TYPE = {
+        REGISTER: 1,
+        LOGIN: 2,
+        AUTH_SUCCESS: 3,
+        AUTH_FAILED: 4,
+        JOIN_QUEUE: 5,
+        LEAVE_QUEUE: 6,
+        START_GAME: 7,
+        PLAYER_MOVE: 8,
+        MOVE_RESULT: 9,
+        GAME_OVER: 10,
+        CHAT: 11,
+        LOGOUT: 12,
+        PLACE_SHIP: 15,
+      };
+
+      const MESSAGE_SIZE = 1060; // msg_type(4)+token(512)+payload(544)
+
+      // ================= Utils =================
+      function log(msg, type = "info") {
+        const logPanel = document.getElementById("logPanel");
+        const entry = document.createElement("div");
+        entry.className = `log-entry ${type}`;
+        const ts = new Date().toLocaleTimeString();
+        entry.innerHTML = `<span class="timestamp">[${ts}]</span>${msg}`;
+        logPanel.appendChild(entry);
+        logPanel.scrollTop = logPanel.scrollHeight;
+      }
+
+      function updateStatus(connected) {
+        const dot = document.getElementById("statusDot");
+        const text = document.getElementById("statusText");
+        if (connected) {
+          dot.classList.add("connected");
+          text.textContent = "Connected";
+        } else {
+          dot.classList.remove("connected");
+          text.textContent = "Disconnected";
+        }
+        document.getElementById("btnRegister").disabled = !connected;
+        document.getElementById("btnLogin").disabled = !connected;
+        document.getElementById("connectBtn").textContent = connected
+          ? "Disconnect"
+          : "Connect";
+      }
+
+      function updateAuthStatus(loggedIn) {
+        document.getElementById("btnJoinQueue").disabled = !loggedIn;
+        document.getElementById("btnMove").disabled = !loggedIn;
+        document.getElementById("btnChat").disabled = !loggedIn;
+        document.getElementById("btnLogout").disabled = !loggedIn;
+        document.getElementById("currentUser").textContent = loggedIn;
+        document.getElementById("btnPlaceShip").disabled = !loggedIn
+          ? `👤 ${currentUsername}`
+          : "";
+      }
+
+      function toggleConnection() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        } else {
+          connect();
+        }
+      }
+
+      // ================= Connection =================
+      function connect() {
+        const url = document.getElementById("wsUrl").value;
+        log(`🔌 Kết nối ${url}...`, "info");
+        ws = new WebSocket(url);
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => {
+          log("✅ Connected", "success");
+          updateStatus(true);
+        };
+        ws.onclose = (e) => {
+          log(`❌ Disconnected code=${e.code}`, "warning");
+          updateStatus(false);
+          updateAuthStatus(false);
+        };
+        ws.onerror = (e) => {
+          log("❌ WebSocket error", "error");
+          console.error(e);
+        };
+        ws.onmessage = (event) => {
+          handleMessage(event.data);
+        };
+      }
+
+      // ================= Message =================
+      function writeString(view, offset, str, maxLen) {
+        for (let i = 0; i < maxLen; i++) {
+          view.setUint8(offset + i, i < str.length ? str.charCodeAt(i) : 0);
+        }
+      }
+
+      function sendMessage(type, payloadBuilder) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          log("❌ Chưa kết nối server", "error");
+          return;
+        }
+        const buffer = new ArrayBuffer(MESSAGE_SIZE);
+        const view = new DataView(buffer);
+        for (let i = 0; i < MESSAGE_SIZE; i++) view.setUint8(i, 0);
+        view.setInt32(0, type, true);
+        if (payloadBuilder) payloadBuilder(view);
+        log(`📤 Gửi message type=${type}, size=${MESSAGE_SIZE}`, "info");
+        ws.send(buffer);
+      }
+
+      // ================= Actions =================
+      function register() {
+        const u = document.getElementById("regUsername").value;
+        const p = document.getElementById("regPassword").value;
+        if (!u || !p) {
+          log("❌ Nhập username/password", "error");
+          return;
+        }
+        sendMessage(MSG_TYPE.REGISTER, (view) => {
+          writeString(view, 4 + 512, u, 32); // username
+          writeString(view, 4 + 512 + 32, p, 32); // password
+        });
+        closeModal("registerModal");
+      }
+
+      function login() {
+        const u = document.getElementById("loginUsername").value;
+        const p = document.getElementById("loginPassword").value;
+        if (!u || !p) {
+          log("❌ Nhập username/password", "error");
+          return;
+        }
+        sendMessage(MSG_TYPE.LOGIN, (view) => {
+          writeString(view, 4 + 512, u, 32); // username
+          writeString(view, 4 + 512 + 32, p, 32); // password
+        });
+        closeModal("loginModal");
+      }
+
+      function logout() {
+        sendMessage(MSG_TYPE.LOGOUT, (view) => {
+          writeString(view, 4, currentToken, 512);
+        });
+        currentToken = "";
+        currentUsername = "";
+        updateAuthStatus(false);
+      }
+
+      function showPlaceShipModal() {
+        document.getElementById("placeShipModal").classList.add("active");
+      }
+
+      function placeShip() {
+        const type = parseInt(document.getElementById("shipType").value);
+        const row = parseInt(document.getElementById("shipRow").value);
+        const col = parseInt(document.getElementById("shipCol").value);
+        const horizontal = document.getElementById("shipHorizontal").checked;
+
+        if (
+          isNaN(row) ||
+          isNaN(col) ||
+          row < 0 ||
+          row > 9 ||
+          col < 0 ||
+          col > 9
+        ) {
+          log("❌ Invalid coordinates (0-9)", "error");
+          return;
+        }
+
+        sendMessage(MSG_TYPE.PLACE_SHIP, (view) => {
+          writeString(view, 4, currentToken, 512);
+          // Payload structure: ship_type(4) + row(4) + col(4) + is_horizontal(1)
+          view.setInt32(516, type, true);
+          view.setInt32(520, row, true);
+          view.setInt32(524, col, true);
+          view.setUint8(528, horizontal ? 1 : 0);
+        });
+
+        log(
+          `🚢 Placing ${getShipName(type)} at (${row},${col}) ${
+            horizontal ? "H" : "V"
+          }`,
+          "info"
+        );
+        closeModal("placeShipModal");
+      }
+
+      function getShipName(type) {
+        switch (type) {
+          case 5:
+            return "Carrier";
+          case 4:
+            return "Battleship";
+          case 3:
+            return "Cruiser/Submarine";
+          case 2:
+            return "Destroyer";
+          default:
+            return "Unknown";
+        }
+      }
+
+      function joinQueue() {
+        sendMessage(MSG_TYPE.JOIN_QUEUE, (view) => {
+          writeString(view, 4, currentToken, 512);
+        });
+        log("⏳ Joined queue", "info");
+      }
+
+      function makeMove() {
+        const x = parseInt(document.getElementById("moveX").value);
+        const y = parseInt(document.getElementById("moveY").value);
+        if (isNaN(x) || isNaN(y) || x < 0 || x > 9 || y < 0 || y > 9) {
+          log("❌ Coordinates 0-9", "error");
+          return;
+        }
+        sendMessage(MSG_TYPE.PLAYER_MOVE, (view) => {
+          writeString(view, 4, currentToken, 512);
+          view.setInt32(516, x, true);
+          view.setInt32(520, y, true);
+        });
+        closeModal("moveModal");
+      }
+
+      function sendChat() {
+        const msg = document.getElementById("chatMessage").value;
+        if (!msg) {
+          log("❌ Enter message", "error");
+          return;
+        }
+        sendMessage(MSG_TYPE.CHAT, (view) => {
+          writeString(view, 4, currentToken, 512);
+          writeString(view, 516, msg, 128);
+        });
+        document.getElementById("chatMessage").value = "";
+        closeModal("chatModal");
+      }
+
+      // ================= Modals =================
+      function showRegisterModal() {
+        document.getElementById("registerModal").classList.add("active");
+      }
+      function showLoginModal() {
+        document.getElementById("loginModal").classList.add("active");
+      }
+      function showMoveModal() {
+        document.getElementById("moveModal").classList.add("active");
+      }
+      function showChatModal() {
+        document.getElementById("chatModal").classList.add("active");
+      }
+      function closeModal(id) {
+        document.getElementById(id).classList.remove("active");
+      }
+
+      // ================= Message handler =================
+      function readString(view, offset, maxLen) {
+        let str = "";
+        for (let i = 0; i < maxLen; i++) {
+          const c = view.getUint8(offset + i);
+          if (c === 0) break;
+          str += String.fromCharCode(c);
+        }
+        return str;
+      }
+
+      function handleMessage(data) {
+        const view = new DataView(data);
+        const type = view.getInt32(0, true);
+        switch (type) {
+          case MSG_TYPE.AUTH_SUCCESS:
+            currentToken = readString(view, 4, 512);
+            currentUsername = readString(view, 516, 32);
+            log(`✅ Login success: ${currentUsername}`, "success");
+            updateAuthStatus(true);
+            break;
+          case MSG_TYPE.AUTH_FAILED:
+            const reason = readString(view, 516, 64);
+            log(`❌ Auth failed: ${reason}`, "error");
+            break;
+          case MSG_TYPE.START_GAME:
+            const opp = readString(view, 516, 32);
+            log(`🎮 Game started! Opponent: ${opp}`, "success");
+            break;
+          case MSG_TYPE.MOVE_RESULT:
+            const x = view.getInt32(516, true);
+            const y = view.getInt32(520, true);
+            const hit = view.getInt32(524, true);
+            const sunk = readString(view, 528, 32);
+            if (hit) {
+              log(
+                `🎯 HIT (${x},${y}) ${sunk ? `Sunk:${sunk}` : ""}`,
+                "success"
+              );
+            } else {
+              log(`💦 MISS (${x},${y})`, "warning");
             }
+            break;
+          case MSG_TYPE.GAME_OVER:
+            log("🏁 Game Over!", "info");
+            break;
+          case MSG_TYPE.PLACE_SHIP:
+            log("✅ Ship placed successfully", "success");
+            break;
+          default:
+            log(`Unknown message type: ${type}`, "warning");
+        }
+      }
 
-            function updateStatus(connected) {
-                const dot = document.getElementById("statusDot");
-                const text = document.getElementById("statusText");
-                if (connected) {
-                    dot.classList.add("connected");
-                    text.textContent = "Connected";
-                } else {
-                    dot.classList.remove("connected");
-                    text.textContent = "Disconnected";
-                }
-                document.getElementById("btnRegister").disabled = !connected;
-                document.getElementById("btnLogin").disabled = !connected;
-                document.getElementById("connectBtn").textContent = connected
-                    ? "Disconnect"
-                    : "Connect";
-            }
-
-            function updateAuthStatus(loggedIn) {
-                document.getElementById("btnJoinQueue").disabled = !loggedIn;
-                document.getElementById("btnMove").disabled = !loggedIn;
-                document.getElementById("btnChat").disabled = !loggedIn;
-                document.getElementById("btnLogout").disabled = !loggedIn;
-                document.getElementById("currentUser").textContent = loggedIn
-                    ? `👤 ${currentUsername}`
-                    : "";
-            }
-
-            function toggleConnection() {
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.close();
-                } else {
-                    connect();
-                }
-            }
-
-            // ================= Connection =================
-            function connect() {
-                const url = document.getElementById("wsUrl").value;
-                log(`🔌 Kết nối ${url}...`, "info");
-                ws = new WebSocket(url);
-                ws.binaryType = "arraybuffer";
-
-                ws.onopen = () => {
-                    log("✅ Connected", "success");
-                    updateStatus(true);
-                };
-                ws.onclose = (e) => {
-                    log(`❌ Disconnected code=${e.code}`, "warning");
-                    updateStatus(false);
-                    updateAuthStatus(false);
-                };
-                ws.onerror = (e) => {
-                    log("❌ WebSocket error", "error");
-                    console.error(e);
-                };
-                ws.onmessage = (event) => {
-                    handleMessage(event.data);
-                };
-            }
-
-            // ================= Message =================
-            function writeString(view, offset, str, maxLen) {
-                for (let i = 0; i < maxLen; i++) {
-                    view.setUint8(
-                        offset + i,
-                        i < str.length ? str.charCodeAt(i) : 0
-                    );
-                }
-            }
-
-            function sendMessage(type, payloadBuilder) {
-                if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    log("❌ Chưa kết nối server", "error");
-                    return;
-                }
-                const buffer = new ArrayBuffer(MESSAGE_SIZE);
-                const view = new DataView(buffer);
-                for (let i = 0; i < MESSAGE_SIZE; i++) view.setUint8(i, 0);
-                view.setInt32(0, type, true);
-                if (payloadBuilder) payloadBuilder(view);
-                log(
-                    `📤 Gửi message type=${type}, size=${MESSAGE_SIZE}`,
-                    "info"
-                );
-                ws.send(buffer);
-            }
-
-            // ================= Actions =================
-            function register() {
-                const u = document.getElementById("regUsername").value;
-                const p = document.getElementById("regPassword").value;
-                if (!u || !p) {
-                    log("❌ Nhập username/password", "error");
-                    return;
-                }
-                sendMessage(MSG_TYPE.REGISTER, (view) => {
-                    writeString(view, 4 + 512, u, 32); // username
-                    writeString(view, 4 + 512 + 32, p, 32); // password
-                });
-                closeModal("registerModal");
-            }
-
-            function login() {
-                const u = document.getElementById("loginUsername").value;
-                const p = document.getElementById("loginPassword").value;
-                if (!u || !p) {
-                    log("❌ Nhập username/password", "error");
-                    return;
-                }
-                sendMessage(MSG_TYPE.LOGIN, (view) => {
-                    writeString(view, 4 + 512, u, 32); // username
-                    writeString(view, 4 + 512 + 32, p, 32); // password
-                });
-                closeModal("loginModal");
-            }
-
-            function logout() {
-                sendMessage(MSG_TYPE.LOGOUT, (view) => {
-                    writeString(view, 4, currentToken, 512);
-                });
-                currentToken = "";
-                currentUsername = "";
-                updateAuthStatus(false);
-            }
-
-            function joinQueue() {
-                sendMessage(MSG_TYPE.JOIN_QUEUE, (view) => {
-                    writeString(view, 4, currentToken, 512);
-                });
-                log("⏳ Joined queue", "info");
-            }
-
-            function makeMove() {
-                const x = parseInt(document.getElementById("moveX").value);
-                const y = parseInt(document.getElementById("moveY").value);
-                if (isNaN(x) || isNaN(y) || x < 0 || x > 9 || y < 0 || y > 9) {
-                    log("❌ Coordinates 0-9", "error");
-                    return;
-                }
-                sendMessage(MSG_TYPE.PLAYER_MOVE, (view) => {
-                    writeString(view, 4, currentToken, 512);
-                    view.setInt32(516, x, true);
-                    view.setInt32(520, y, true);
-                });
-                closeModal("moveModal");
-            }
-
-            function sendChat() {
-                const msg = document.getElementById("chatMessage").value;
-                if (!msg) {
-                    log("❌ Enter message", "error");
-                    return;
-                }
-                sendMessage(MSG_TYPE.CHAT, (view) => {
-                    writeString(view, 4, currentToken, 512);
-                    writeString(view, 516, msg, 128);
-                });
-                document.getElementById("chatMessage").value = "";
-                closeModal("chatModal");
-            }
-
-            // ================= Modals =================
-            function showRegisterModal() {
-                document
-                    .getElementById("registerModal")
-                    .classList.add("active");
-            }
-            function showLoginModal() {
-                document.getElementById("loginModal").classList.add("active");
-            }
-            function showMoveModal() {
-                document.getElementById("moveModal").classList.add("active");
-            }
-            function showChatModal() {
-                document.getElementById("chatModal").classList.add("active");
-            }
-            function closeModal(id) {
-                document.getElementById(id).classList.remove("active");
-            }
-
-            // ================= Message handler =================
-            function readString(view, offset, maxLen) {
-                let str = "";
-                for (let i = 0; i < maxLen; i++) {
-                    const c = view.getUint8(offset + i);
-                    if (c === 0) break;
-                    str += String.fromCharCode(c);
-                }
-                return str;
-            }
-
-            function handleMessage(data) {
-                const view = new DataView(data);
-                const type = view.getInt32(0, true);
-                switch (type) {
-                    case MSG_TYPE.AUTH_SUCCESS:
-                        currentToken = readString(view, 4, 512);
-                        currentUsername = readString(view, 516, 32);
-                        log(`✅ Login success: ${currentUsername}`, "success");
-                        updateAuthStatus(true);
-                        break;
-                    case MSG_TYPE.AUTH_FAILED:
-                        const reason = readString(view, 516, 64);
-                        log(`❌ Auth failed: ${reason}`, "error");
-                        break;
-                    case MSG_TYPE.START_GAME:
-                        const opp = readString(view, 516, 32);
-                        log(`🎮 Game started! Opponent: ${opp}`, "success");
-                        break;
-                    case MSG_TYPE.MOVE_RESULT:
-                        const x = view.getInt32(516, true);
-                        const y = view.getInt32(520, true);
-                        const hit = view.getInt32(524, true);
-                        const sunk = readString(view, 528, 32);
-                        if (hit) {
-                            log(
-                                `🎯 HIT (${x},${y}) ${
-                                    sunk ? `Sunk:${sunk}` : ""
-                                }`,
-                                "success"
-                            );
-                        } else {
-                            log(`💦 MISS (${x},${y})`, "warning");
-                        }
-                        break;
-                    case MSG_TYPE.GAME_OVER:
-                        log("🏁 Game Over!", "info");
-                        break;
-                    default:
-                        log(`Unknown message type: ${type}`, "warning");
-                }
-            }
-
-            // Auto scroll
-            setInterval(() => {
-                document.getElementById("logPanel").scrollTop =
-                    document.getElementById("logPanel").scrollHeight;
-            }, 100);
-        </script>
-    </body>
+      // Auto scroll
+      setInterval(() => {
+        document.getElementById("logPanel").scrollTop =
+          document.getElementById("logPanel").scrollHeight;
+      }, 100);
+    </script>
+  </body>
 </html>
