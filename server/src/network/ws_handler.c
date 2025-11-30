@@ -74,6 +74,9 @@ void handle_message(int client_sock, message_t *msg) {
             break;
         case MSG_PLACE_SHIP:
             handle_place_ship(client_sock, &msg->payload.place_ship, msg->token);
+        case MSG_PLAYER_READY:
+            handle_player_ready(client_sock, msg);
+
             break;
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);
@@ -414,5 +417,27 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
     }
     
     ws_send_message(client_sock, &resp);
+    free(user_id);
+}
+void handle_player_ready(int client_sock, message_t *msg) {
+    // Verify token
+    char *user_id = jwt_verify(msg->token);
+    if (!user_id) {
+        log_error("Invalid token in PLAYER_READY");
+        return;
+    }
+
+    // Lấy dữ liệu payload
+    const char *game_id = msg->payload.ready.game_id;
+    const uint8_t *board = msg->payload.ready.board_state;
+
+    log_info("Player %s READY for game %s", user_id, game_id);
+
+    // Gọi game logic nhưng KHÔNG gửi phản hồi
+    if (!game_set_player_ready(game_id, user_id, board)) {
+        log_error("Failed to set READY for player %s", user_id);
+        // Không gửi message lại
+    }
+
     free(user_id);
 }
