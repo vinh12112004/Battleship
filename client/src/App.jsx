@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/context/AuthContext";
-import { GameProvider } from "@/context/GameContext";
+import  GameProvider  from "@/context/GameContext";
 import ConnectionStatus from "@/components/common/ConnectionStatus";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";

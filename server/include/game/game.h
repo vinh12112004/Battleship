@@ -5,10 +5,6 @@
 #include "game_board.h"
 #include <stdint.h> 
 
-// Định nghĩa kích thước
-#define GRID_SIZE 10
-#define BOARD_SIZE (GRID_SIZE * GRID_SIZE)
-
 // Cấu trúc mô tả tọa độ (cho shots)
 typedef struct {
     uint8_t x;
@@ -26,11 +22,11 @@ typedef struct {
 
 // Cấu trúc mô tả bảng của một người chơi
 // CHỈ LƯU MẢNG 1D VỚI GIÁ TRỊ LÀ KÍCH THƯỚC THUYỀN (hoặc 0)
-typedef struct {
-    // grid: Mảng phẳng 1D (100 ô). 0: nước, 2-5: kích thước thuyền,
-    // Giá trị khác 0 sau khi hit có thể là 1 (miss) hoặc giá trị ban đầu.
-    uint8_t grid[BOARD_SIZE]; 
-} player_board_t;
+// typedef struct {
+//     // grid: Mảng phẳng 1D (100 ô). 0: nước, 2-5: kích thước thuyền,
+//     // Giá trị khác 0 sau khi hit có thể là 1 (miss) hoặc giá trị ban đầu.
+//     uint8_t grid[BOARD_SIZE]; 
+// } player_board_t;
 
 
 typedef enum {
@@ -47,16 +43,13 @@ typedef struct {
     int player1_socket;
     int player2_socket;
     
-    board_t player1_board;
-    board_t player2_board;
-    
     game_state_t state;
     char current_turn[64]; // player1_id hoặc player2_id
     char winner_id[64];    // ID người thắng hoặc chuỗi rỗng ("")
 
     // THÔNG TIN BẢNG CỦA MỖI NGƯỜI CHƠI (chỉ lưu grid)
-    player_board_t player1_board;
-    player_board_t player2_board;
+    board_t player1_board; 
+    board_t player2_board;
     
     // Danh sách các cú bắn (shots)
     shot_t shots[1000]; // Giả định tối đa 1000 cú bắn

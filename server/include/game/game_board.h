@@ -3,16 +3,17 @@
 
 #include <stdbool.h>
 
-#define BOARD_SIZE 10
+#define GRID_SIZE 10
+#define BOARD_SIZE (GRID_SIZE * GRID_SIZE)
 #define MAX_SHIPS 5
 
 // Ship types
 typedef enum {
     SHIP_CARRIER = 5,
     SHIP_BATTLESHIP = 4,
-    SHIP_CRUISER = 3,
-    SHIP_SUBMARINE = 31, 
-    SHIP_DESTROYER = 2
+    SHIP_DESTROYER = 3, 
+    SHIP_SUBMARINE = 2,  
+    SHIP_PATROL = 1        
 } ship_type_t;
 
 // Cell states
@@ -35,7 +36,7 @@ typedef struct {
 
 // Player board
 typedef struct {
-    cell_state_t grid[BOARD_SIZE][BOARD_SIZE];
+    cell_state_t grid[BOARD_SIZE];
     ship_t ships[MAX_SHIPS];
     int ship_count;
     int ships_remaining;

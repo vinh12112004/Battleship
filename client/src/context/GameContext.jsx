@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 // eslint-disable-next-line react-refresh/only-export-components
 export const GameContext = createContext(null);
 
-export function GameProvider({ children }) {
+function GameProvider({ children }) {
   const { user } = useAuth();
   const [gameState, setGameState] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -199,3 +199,5 @@ export function GameProvider({ children }) {
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }
+
+export default GameProvider;

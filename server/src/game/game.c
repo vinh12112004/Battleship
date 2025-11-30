@@ -5,7 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
+#include "database/mongo_user.h"
+#include "network/ws_protocol.h"
+#include "network/ws_server.h"
 #define COLLECTION_GAMES "games"
 #define MAX_ACTIVE_GAMES 100
 
@@ -39,13 +41,23 @@ static void board_to_bson(bson_t *parent, const char *key, const board_t *board)
     
     BSON_APPEND_INT32(&board_doc, "ships_remaining", board->ships_remaining);
     
-    // Serialize grid (100 cells)
     bson_t grid_array;
     BSON_APPEND_ARRAY_BEGIN(&board_doc, "grid", &grid_array);
-    for (int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++) {
-        char idx[8];
-        snprintf(idx, sizeof(idx), "%d", i);
-        BSON_APPEND_INT32(&grid_array, idx, (int)board->grid[i / BOARD_SIZE][i % BOARD_SIZE]);
+    
+    for (int y = 0; y < GRID_SIZE; y++) {
+        bson_t row;
+        char key_str[16];
+        snprintf(key_str, sizeof(key_str), "%d", y);
+        BSON_APPEND_ARRAY_BEGIN(&grid_array, key_str, &row);
+        
+        for (int x = 0; x < GRID_SIZE; x++) {
+            char subkey[16];
+            snprintf(subkey, sizeof(subkey), "%d", x);
+            
+            int val = (int)board->grid[y * GRID_SIZE + x];
+            bson_append_int32(&row, subkey, -1, val);
+        }
+        bson_append_array_end(&grid_array, &row);
     }
     bson_append_array_end(&board_doc, &grid_array);
     
@@ -96,16 +108,21 @@ static bool bson_to_board(const bson_t *doc, const char *key, board_t *board) {
             board->ships_remaining = bson_iter_int32(&child);
     }
     
-    // Deserialize grid
     bson_iter_init(&child, doc);
     if (bson_iter_find(&child, key) && bson_iter_recurse(&child, &child) &&
         bson_iter_find(&child, "grid") && bson_iter_recurse(&child, &array_iter)) {
-        int idx = 0;
-        while (bson_iter_next(&array_iter) && idx < BOARD_SIZE * BOARD_SIZE) {
-            int row = idx / BOARD_SIZE;
-            int col = idx % BOARD_SIZE;
-            board->grid[row][col] = (cell_state_t)bson_iter_int32(&array_iter);
-            idx++;
+        
+        int row = 0;
+        while (bson_iter_next(&array_iter) && row < GRID_SIZE) {
+            bson_iter_t row_iter;
+            if (bson_iter_recurse(&array_iter, &row_iter)) {
+                int col = 0;
+                while (bson_iter_next(&row_iter) && col < GRID_SIZE) {
+                    board->grid[row * GRID_SIZE + col] = (cell_state_t)bson_iter_int32(&row_iter);
+                    col++;
+                }
+            }
+            row++;
         }
     }
     
@@ -114,11 +131,6 @@ static bool bson_to_board(const bson_t *doc, const char *key, board_t *board) {
 
 // ==================== Game Create ====================
 bool game_create(const char *player1_id, const char *player2_id, char *out_game_id) {
-    if (active_game_count >= MAX_ACTIVE_GAMES) {
-        log_error("Maximum active games reached");
-        return false;
-    }
-    
     mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
     if (!client) return false;
 
@@ -127,6 +139,7 @@ bool game_create(const char *player1_id, const char *player2_id, char *out_game_
         mongo_release_client(g_mongo_ctx, client);
         return false;
     }
+
     bson_t *doc = bson_new();
     bson_oid_t oid;
     bson_oid_init(&oid, NULL);
@@ -136,17 +149,6 @@ bool game_create(const char *player1_id, const char *player2_id, char *out_game_
     BSON_APPEND_UTF8(doc, "player2_id", player2_id);
     BSON_APPEND_UTF8(doc, "phase", "placing_ships");
     BSON_APPEND_UTF8(doc, "current_turn", player1_id);
-    BSON_APPEND_BOOL(doc, "player1_ready", false);
-    BSON_APPEND_BOOL(doc, "player2_ready", false);
-    bson_append_date_time(doc, "created_at", -1, (int64_t)time(NULL) * 1000);
-    bson_append_date_time(doc, "updated_at", -1, (int64_t)time(NULL) * 1000);
-    
-    // Initialize empty boards
-    board_t empty_board;
-    board_init(&empty_board);
-    board_to_bson(doc, "player1_board", &empty_board);
-    board_to_bson(doc, "player2_board", &empty_board);
-    
 
     // --- TẠO BOARD 10×10 TOÀN 0 ---
     bson_t board1, board2, grid1, grid2;
@@ -205,23 +207,8 @@ bool game_create(const char *player1_id, const char *player2_id, char *out_game_
     if (success) {
         char oid_str[25];
         bson_oid_to_string(&oid, oid_str);
-        strcpy(out_game_id, oid_str);
-        
-        // Create in-memory session
-        game_session_t *game = (game_session_t*)calloc(1, sizeof(game_session_t));
-        strncpy(game->game_id, oid_str, 64);
-        strncpy(game->player1_id, player1_id, 63);
-        strncpy(game->player2_id, player2_id, 63);
-        game->state = GAME_STATE_PLACING_SHIPS;
-        strncpy(game->current_turn, player1_id, 63);
-        game->created_at = time(NULL);
-        board_init(&game->player1_board);
-        board_init(&game->player2_board);
-        
-        active_games[active_game_count++] = game;
-        
         snprintf(out_game_id, 25, "%s", oid_str);
-        log_info("Game created: %s (%s vs %s)", oid_str, player1_id, player2_id);
+        log_info("Game created: %s", oid_str);
     } else {
         log_error("Failed to create game: %s", error.message);
     }
@@ -280,7 +267,7 @@ game_session_t* game_get(const char *game_id) {
         if (bson_iter_init_find(&iter, doc, "player2_id"))
             strncpy(game->player2_id, bson_iter_utf8(&iter, NULL), 63);
         
-        if (bson_iter_init_find(&iter, doc, "state")) {
+        if (bson_iter_init_find(&iter, doc, "phase")) {
             const char *state_str = bson_iter_utf8(&iter, NULL);
             if (strcmp(state_str, "placing_ships") == 0)
                 game->state = GAME_STATE_PLACING_SHIPS;
@@ -510,11 +497,13 @@ shot_result_t game_process_shot(const char *game_id, const char *player_id, int 
         return result;
     }
     
+    // ✅ Check turn
     if (!game_is_player_turn(game_id, player_id)) {
         log_warn("Not player's turn: %s", player_id);
         return result;
     }
     
+    // ✅ Get opponent's board
     board_t *target_board = NULL;
     
     if (strcmp(game->player1_id, player_id) == 0) {
@@ -526,17 +515,22 @@ shot_result_t game_process_shot(const char *game_id, const char *player_id, int 
         return result;
     }
     
+    // ✅ Process shot on target board
     result = board_process_shot(target_board, row, col);
+    
+    log_info("Shot result: hit=%d, sunk=%d, type=%d, game_over=%d",
+             result.is_hit, result.is_sunk, result.sunk_ship_type, result.game_over);
     
     if (result.game_over) {
         game->state = GAME_STATE_FINISHED;
-        log_info("Game over! Winner: %s", player_id);
+        log_info("🏆 Game over! Winner: %s", player_id);
         game_end(game_id, player_id);
     } else {
+        // ✅ Switch turn nếu chưa kết thúc
         game_switch_turn(game);
     }
     
-    // ✅ Sync to DB after every move
+    // ✅ Sync to DB
     game_sync_to_db(game);
     
     return result;
@@ -600,8 +594,7 @@ void game_free(game_session_t *game) {
             break;
         }
     }
-    
-    free(game);
+
     if (game) free(game);
 }
 
@@ -617,7 +610,9 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
         return false;
     }
 
-    // 1. Tìm game để xác định vai trò (P1 hay P2) và trạng thái đối thủ
+    // =================================================================================
+    // BƯỚC 1: Tìm game để xác định vai trò (P1 hay P2) và trạng thái đối thủ
+    // =================================================================================
     bson_t *query = bson_new();
     bson_oid_t oid;
     bson_oid_init_from_string(&oid, game_id);
@@ -630,20 +625,35 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
     bool is_p2 = false;
     bool other_ready = false;
     bool success = false;
+    bool both_ready = false;
+
+    // ✅ Khai báo buffer để lưu player IDs
+    char p1_id[65] = {0};
+    char p2_id[65] = {0};
 
     if (mongoc_cursor_next(cursor, &doc)) {
         bson_iter_t iter;
         
-        // Check Player 1
+        // ✅ Check Player 1 (dùng tên biến khác)
         if (bson_iter_init_find(&iter, doc, "player1_id") && BSON_ITER_HOLDS_UTF8(&iter)) {
-            const char *p1_id = bson_iter_utf8(&iter, NULL);
-            if (strcmp(p1_id, player_id) == 0) is_p1 = true;
+            const char *p1_id_from_db = bson_iter_utf8(&iter, NULL);  // ✅ ĐỔI TÊN
+            strncpy(p1_id, p1_id_from_db, 64);  // Copy vào buffer
+            p1_id[64] = '\0';
+            
+            if (strcmp(p1_id, player_id) == 0) {
+                is_p1 = true;
+            }
         }
 
-        // Check Player 2
+        // ✅ Check Player 2 (dùng tên biến khác)
         if (bson_iter_init_find(&iter, doc, "player2_id") && BSON_ITER_HOLDS_UTF8(&iter)) {
-            const char *p2_id = bson_iter_utf8(&iter, NULL);
-            if (strcmp(p2_id, player_id) == 0) is_p2 = true;
+            const char *p2_id_from_db = bson_iter_utf8(&iter, NULL);  // ✅ ĐỔI TÊN
+            strncpy(p2_id, p2_id_from_db, 64);  // Copy vào buffer
+            p2_id[64] = '\0';
+            
+            if (strcmp(p2_id, player_id) == 0) {
+                is_p2 = true;
+            }
         }
 
         // Check trạng thái đối thủ
@@ -657,7 +667,7 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
             }
         }
     }
-    mongoc_cursor_destroy(cursor); // Xong việc đọc, hủy cursor
+    mongoc_cursor_destroy(cursor);
 
     if (!is_p1 && !is_p2) {
         log_error("Player %s not found in game %s", player_id, game_id);
@@ -667,7 +677,9 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
         return false;
     }
 
-    // 2. Chuẩn bị dữ liệu Update
+    // =================================================================================
+    // BƯỚC 2: Chuẩn bị dữ liệu Update
+    // =================================================================================
     bson_t *update = bson_new();
     bson_t set_doc;
     BSON_APPEND_DOCUMENT_BEGIN(update, "$set", &set_doc);
@@ -679,15 +691,31 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
     // Nếu đối thủ đã ready, chuyển game sang trạng thái playing
     if (other_ready) {
         BSON_APPEND_UTF8(&set_doc, "phase", "playing");
-        log_info("Game %s started! Both players ready.", game_id);
+        both_ready = true;
+        
+        // ✅ Fetch username của player1 để set làm current_turn
+        user_t *p1_user = user_find_by_id(p1_id);  // ✅ DÙNG buffer p1_id
+        if (p1_user) {
+            BSON_APPEND_UTF8(&set_doc, "current_turn", p1_user->username);
+            log_info("Set current_turn to: %s (username of player1)", p1_user->username);
+            user_free(p1_user);
+        } else {
+            // Fallback: dùng ID nếu không tìm thấy user
+            BSON_APPEND_UTF8(&set_doc, "current_turn", p1_id);
+            log_warn("Could not find user for player1_id, using ID as current_turn");
+        }
     }
 
-    // Xây dựng cấu trúc BSON cho Board (Convert 1D uint8_t -> 2D BSON Array)
-    const char *board_field = is_p1 ? "player1_board" : "player2_board";
-    bson_t board_doc, grid_arr;
-    
-    BSON_APPEND_DOCUMENT_BEGIN(&set_doc, board_field, &board_doc);
-    BSON_APPEND_ARRAY_BEGIN(&board_doc, "grid", &grid_arr);
+    // --- QUAN TRỌNG: Dùng Dot Notation để chỉ update Grid, KHÔNG ghi đè Ships ---
+    char grid_key_dot[64];
+    if (is_p1) {
+        snprintf(grid_key_dot, sizeof(grid_key_dot), "player1_board.grid");
+    } else {
+        snprintf(grid_key_dot, sizeof(grid_key_dot), "player2_board.grid");
+    }
+
+    bson_t grid_arr;
+    BSON_APPEND_ARRAY_BEGIN(&set_doc, grid_key_dot, &grid_arr);
 
     for (int y = 0; y < 10; y++) {
         bson_t row;
@@ -699,21 +727,68 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
             char subkey[16];
             snprintf(subkey, sizeof(subkey), "%d", x);
             
-            // Lấy giá trị từ mảng 1D: index = y * 10 + x
             int val = (int)board[y * 10 + x]; 
             bson_append_int32(&row, subkey, -1, val);
         }
         bson_append_array_end(&grid_arr, &row);
     }
-    bson_append_array_end(&board_doc, &grid_arr);
-    bson_append_document_end(&set_doc, &board_doc);
+    bson_append_array_end(&set_doc, &grid_arr);
     
     bson_append_document_end(update, &set_doc);
 
-    // 3. Thực thi Update
+    // =================================================================================
+    // BƯỚC 3: Thực thi Update
+    // =================================================================================
     bson_error_t error;
     if (mongoc_collection_update_one(collection, query, update, NULL, NULL, &error)) {
         success = true;
+        
+        // Nếu cả 2 đã ready -> Gửi thông báo Start Game
+        if (both_ready) {
+            game_session_t *game = game_get(game_id);
+            if (game) {
+                game->state = GAME_STATE_PLAYING;
+                log_info("Game %s started! Both players ready.", game_id);
+                log_info("In-memory game state updated to PLAYING");
+                
+                // --- Gửi tin nhắn START_GAME ---
+                message_t start_msg = {0};
+                start_msg.type = MSG_START_GAME;
+                
+                strncpy(start_msg.payload.start_game.game_id, game_id, 63);
+                
+                // ✅ Fetch username để gửi current_turn
+                user_t *p1_user_for_msg = user_find_by_id(p1_id);
+                if (p1_user_for_msg) {
+                    strncpy(start_msg.payload.start_game.current_turn, p1_user_for_msg->username, 31);
+                    user_free(p1_user_for_msg);
+                }
+
+                // Gửi cho Player 1
+                if (game->player1_socket > 0) {
+                    user_t *p2_user = user_find_by_id(p2_id);
+                    if (p2_user) {
+                        strncpy(start_msg.payload.start_game.opponent, p2_user->username, 31);
+                        user_free(p2_user);
+                    }
+                    ws_send_message(game->player1_socket, &start_msg);
+                    log_info("✅ Sent START_GAME to player1 (socket %d)", game->player1_socket);
+                }
+                
+                // Gửi cho Player 2
+                if (game->player2_socket > 0) {
+                    user_t *p1_user_again = user_find_by_id(p1_id);
+                    if (p1_user_again) {
+                        strncpy(start_msg.payload.start_game.opponent, p1_user_again->username, 31);
+                        user_free(p1_user_again);
+                    }
+                    ws_send_message(game->player2_socket, &start_msg);
+                    log_info("✅ Sent START_GAME to player2 (socket %d)", game->player2_socket);
+                }
+            } else {
+                log_error("Game session not found in memory: %s", game_id);
+            }
+        }
     } else {
         log_error("Failed to set player ready: %s", error.message);
     }

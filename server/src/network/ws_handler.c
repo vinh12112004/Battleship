@@ -74,9 +74,9 @@ void handle_message(int client_sock, message_t *msg) {
             break;
         case MSG_PLACE_SHIP:
             handle_place_ship(client_sock, &msg->payload.place_ship, msg->token);
+            break;
         case MSG_PLAYER_READY:
             handle_player_ready(client_sock, msg);
-
             break;
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);
@@ -188,61 +188,69 @@ void handle_logout(int client_sock, message_t *msg) {
 //     add_to_queue(client_sock, user.user_id);
 // }
 
-void handle_player_move(int client_sock, move_payload *move) {
-    // TODO: Get token from message to identify player
-    char *user_id = ""; // Extract from token
+void handle_player_move(int client_sock, message_t *msg) {
+    const char *token = msg->token;
+    move_payload *move = &msg->payload.move;
     
-    // Find game session
-    game_session_t *game = game_find_by_player(user_id);
-    if (!game) {
-        log_error("No active game for player: %s", user_id);
+    // ✅ Verify JWT
+    char *user_id = jwt_verify(token);
+    if (!user_id) {
+        log_error("Invalid token in PLAYER_MOVE");
         return;
     }
     
-    // Validate move
-    if (!game_is_player_turn(game->game_id, user_id)) {
-        log_warn("Not player's turn: %s", user_id);
+    log_info("Player %s shooting at (%d, %d) in game %s", 
+             user_id, move->row, move->col, move->game_id);
+    
+    // ✅ Process shot
+    shot_result_t result = game_process_shot(move->game_id, user_id, move->row, move->col);
+    
+    // ✅ Send result back to shooter
+    message_t response = {0};
+    response.type = MSG_MOVE_RESULT;
+    strncpy(response.token, token, MAX_JWT_LEN - 1);
+    
+    response.payload.move_res.row = move->row;
+    response.payload.move_res.col = move->col;
+    response.payload.move_res.is_hit = result.is_hit;
+    response.payload.move_res.is_sunk = result.is_sunk;
+    response.payload.move_res.sunk_ship_type = result.sunk_ship_type;
+    response.payload.move_res.game_over = result.game_over;
+    
+    ws_send_message(client_sock, &response);
+    
+    log_info("✅ Sent MOVE_RESULT to shooter: hit=%d, sunk=%d, game_over=%d",
+             result.is_hit, result.is_sunk, result.game_over);
+    
+    // ✅ Notify opponent about the move
+    game_session_t *game = game_get(move->game_id);
+    if (game) {
+        int opponent_socket = 0;
         
-        message_t resp = {0};
-        resp.type = MSG_AUTH_FAILED;
-        strncpy(resp.payload.auth_fail.reason, "Not your turn", 63);
-        ws_send_message(client_sock, &resp);
-        return;
-    }
-    
-    // Process shot
-    shot_result_t result = game_process_shot(game->game_id, user_id, move->y, move->x);
-    
-    // Send result to both players
-    message_t msg1 = {0};
-    msg1.type = MSG_MOVE_RESULT;
-    msg1.payload.move_res.x = move->x;
-    msg1.payload.move_res.y = move->y;
-    msg1.payload.move_res.hit = result.is_hit ? 1 : 0;
-    
-    if (result.is_sunk) {
-        strncpy(msg1.payload.move_res.sunk, ship_type_to_string(result.sunk_ship_type), 31);
-    }
-    
-    // Send to shooter
-    ws_send_message(client_sock, &msg1);
-    
-    // Send to opponent
-    int opponent_sock = (strcmp(game->player1_id, user_id) == 0) ? 
-                        game->player2_socket : game->player1_socket;
-    ws_send_message(opponent_sock, &msg1);
-    
-    // Check game over
-    if (result.game_over) {
-        message_t game_over = {0};
-        game_over.type = MSG_GAME_OVER;
+        if (strcmp(game->player1_id, user_id) == 0) {
+            opponent_socket = game->player2_socket;
+        } else if (strcmp(game->player2_id, user_id) == 0) {
+            opponent_socket = game->player1_socket;
+        }
         
-        ws_send_message(client_sock, &game_over);
-        ws_send_message(opponent_sock, &game_over);
+        if (opponent_socket > 0) {
+            message_t opponent_msg = {0};
+            opponent_msg.type = MSG_MOVE_RESULT;
+            
+            opponent_msg.payload.move_res.row = move->row;
+            opponent_msg.payload.move_res.col = move->col;
+            opponent_msg.payload.move_res.is_hit = result.is_hit;
+            opponent_msg.payload.move_res.is_sunk = result.is_sunk;
+            opponent_msg.payload.move_res.sunk_ship_type = result.sunk_ship_type;
+            opponent_msg.payload.move_res.game_over = result.game_over;
+            
+            ws_send_message(opponent_socket, &opponent_msg);
+            
+            log_info("✅ Sent MOVE_RESULT to opponent (socket %d)", opponent_socket);
+        }
     }
     
-    log_info("Move processed: (%d, %d) by %s, result: %s", 
-             move->x, move->y, user_id, result.is_hit ? "HIT" : "MISS");
+    free(user_id);
 }
 
 void handle_chat(int client_sock, chat_payload *chat) {
@@ -358,9 +366,9 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
     switch (payload->ship_type) {
         case 5: ship_type = SHIP_CARRIER; break;
         case 4: ship_type = SHIP_BATTLESHIP; break;
-        case 3: ship_type = SHIP_CRUISER; break;  // or SUBMARINE
-        case 31: ship_type = SHIP_SUBMARINE; break;
-        case 2: ship_type = SHIP_DESTROYER; break;
+        case 3: ship_type = SHIP_DESTROYER; break;
+        case 2: ship_type = SHIP_SUBMARINE; break;
+        case 1: ship_type = SHIP_PATROL; break;
         default:
             log_error("Invalid ship type: %d", payload->ship_type);
             
@@ -419,6 +427,7 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
     ws_send_message(client_sock, &resp);
     free(user_id);
 }
+
 void handle_player_ready(int client_sock, message_t *msg) {
     // Verify token
     char *user_id = jwt_verify(msg->token);

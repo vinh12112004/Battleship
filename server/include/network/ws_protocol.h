@@ -2,11 +2,10 @@
 #define WS_PROTOCOL_H
 
 #define MAX_JWT_LEN 512
-#define GRID_SIZE 10
-#define BOARD_SIZE (GRID_SIZE * GRID_SIZE)
 
 #include <stdint.h>
 #include <sys/socket.h>
+#include "game/game_board.h"
 
 // WebSocket opcode
 typedef enum {
@@ -43,7 +42,7 @@ typedef enum {
     MSG_LOGOUT,
     MSG_PING = 13,    
     MSG_PONG = 14,
-    MSG_PLACE_SHIP = 15
+    MSG_PLACE_SHIP = 15,
     MSG_PLAYER_READY
 } msg_type;
 
@@ -52,6 +51,7 @@ typedef struct {
     int row;
     int col;
     uint8_t is_horizontal;  // 1=horizontal, 0=vertical
+    uint8_t _padding[3];
 } place_ship_payload;
 
 // Payload structs
@@ -60,11 +60,11 @@ typedef struct { char token[MAX_JWT_LEN]; char username[32]; } auth_success_payl
 typedef struct { char reason[64]; } auth_failed_payload;
 typedef struct { int x; int y; } move_payload;
 typedef struct { int x; int y; int hit; char sunk[32]; } move_result_payload;
-typedef struct { char opponent[32]; char game_id[64]; } start_game_payload;
+typedef struct { char opponent[32]; char game_id[64]; char current_turn[32];} start_game_payload;
 typedef struct { char message[128]; } chat_payload;
-typedef struct { 
-    uint8_t board_state[BOARD_SIZE]; 
+typedef struct __attribute__((packed)) {
     char game_id[65];
+    uint8_t board_state[BOARD_SIZE];
 } ready_payload;
 
 // Message structure
