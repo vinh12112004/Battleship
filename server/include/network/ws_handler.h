@@ -20,6 +20,6 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
 void handle_logout(int client_sock, message_t *msg);
 int check_token(int client_sock, const char *token, auth_user_t *out_user);
 void handle_player_ready(int client_sock, message_t *msg);
-
+void handle_get_online_players(int client_sock, const char *token);
 
 #endif

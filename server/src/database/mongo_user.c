@@ -338,3 +338,148 @@ void user_free(user_t *user) {
     free(user->rank);
     free(user);
 }
+
+online_players_t* user_get_online_players(void) {
+    mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
+    if (!client) return NULL;
+    
+    mongoc_collection_t *collection = mongo_get_collection(client, COLLECTION_USERS);
+    if (!collection) {
+        mongo_release_client(g_mongo_ctx, client);
+        return NULL;
+    }
+    
+    // Query: tìm users có status = "online"
+    bson_t *query = bson_new();
+    BSON_APPEND_UTF8(query, "status", "online");
+    
+    // Options: chỉ lấy các field cần thiết
+    bson_t *opts = bson_new();
+    bson_t projection;
+    BSON_APPEND_DOCUMENT_BEGIN(opts, "projection", &projection);
+    BSON_APPEND_INT32(&projection, "username", 1);
+    BSON_APPEND_INT32(&projection, "elo_rating", 1);
+    BSON_APPEND_INT32(&projection, "rank", 1);
+    bson_append_document_end(opts, &projection);
+    
+    // Execute query
+    mongoc_cursor_t *cursor = mongoc_collection_find_with_opts(
+        collection, query, opts, NULL
+    );
+    
+    // Đếm số lượng kết quả
+    int count = 0;
+    const bson_t *doc;
+    
+    // First pass: count
+    while (mongoc_cursor_next(cursor, &doc)) {
+        count++;
+    }
+    
+    if (count == 0) {
+        log_info("No online players found");
+        mongoc_cursor_destroy(cursor);
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_collection_destroy(collection);
+        mongo_release_client(g_mongo_ctx, client);
+        
+        // Trả về empty list
+        online_players_t *players = calloc(1, sizeof(online_players_t));
+        players->count = 0;
+        return players;
+    }
+    
+    // Allocate result structure
+    online_players_t *players = calloc(1, sizeof(online_players_t));
+    if (!players) {
+        log_error("Failed to allocate memory for online_players_t");
+        mongoc_cursor_destroy(cursor);
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_collection_destroy(collection);
+        mongo_release_client(g_mongo_ctx, client);
+        return NULL;
+    }
+    
+    players->count = count;
+    players->usernames = calloc(count, sizeof(char*));
+    players->elo_ratings = calloc(count, sizeof(int));
+    players->ranks = calloc(count, sizeof(char*));
+    
+    if (!players->usernames || !players->elo_ratings || !players->ranks) {
+        log_error("Failed to allocate memory for player arrays");
+        online_players_free(players);
+        mongoc_cursor_destroy(cursor);
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_collection_destroy(collection);
+        mongo_release_client(g_mongo_ctx, client);
+        return NULL;
+    }
+    
+    // Reset cursor for second pass
+    mongoc_cursor_destroy(cursor);
+    cursor = mongoc_collection_find_with_opts(collection, query, opts, NULL);
+    
+    // Second pass: collect data
+    int i = 0;
+    while (mongoc_cursor_next(cursor, &doc) && i < count) {
+        bson_iter_t iter;
+        
+        if (bson_iter_init_find(&iter, doc, "username")) {
+            players->usernames[i] = strdup(bson_iter_utf8(&iter, NULL));
+        } else {
+            players->usernames[i] = strdup("Unknown");
+        }
+        
+        if (bson_iter_init_find(&iter, doc, "elo_rating")) {
+            players->elo_ratings[i] = bson_iter_int32(&iter);
+        } else {
+            players->elo_ratings[i] = 1500;
+        }
+        
+        if (bson_iter_init_find(&iter, doc, "rank")) {
+            players->ranks[i] = strdup(bson_iter_utf8(&iter, NULL));
+        } else {
+            players->ranks[i] = strdup("Unranked");
+        }
+        
+        i++;
+    }
+    
+    log_info("Found %d online players", count);
+    
+    // Cleanup
+    mongoc_cursor_destroy(cursor);
+    bson_destroy(query);
+    bson_destroy(opts);
+    mongoc_collection_destroy(collection);
+    mongo_release_client(g_mongo_ctx, client);
+    
+    return players;
+}
+
+void online_players_free(online_players_t *players) {
+    if (!players) return;
+    
+    if (players->usernames) {
+        for (int i = 0; i < players->count; i++) {
+            free(players->usernames[i]);
+        }
+        free(players->usernames);
+    }
+    
+    if (players->elo_ratings) {
+        free(players->elo_ratings);
+    }
+    
+    if (players->ranks) {
+        for (int i = 0; i < players->count; i++) {
+            free(players->ranks[i]);
+        }
+        free(players->ranks);
+    }
+    
+    free(players);
+}

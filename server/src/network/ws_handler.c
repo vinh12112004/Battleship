@@ -78,6 +78,9 @@ void handle_message(int client_sock, message_t *msg) {
         case MSG_PLAYER_READY:
             handle_player_ready(client_sock, msg);
             break;
+        case MSG_GET_ONLINE_PLAYERS:
+            handle_get_online_players(client_sock, msg->token);
+            break;
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);
             break;
@@ -453,5 +456,59 @@ void handle_player_ready(int client_sock, message_t *msg) {
         // Không gửi message lại
     }
 
+    free(user_id);
+}
+void handle_get_online_players(int client_sock, const char *token) {
+    // Verify token
+    char *user_id = jwt_verify(token);
+    if (!user_id) {
+        log_warn("Invalid token for get online players");
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
+        ws_send_message(client_sock, &resp);
+        return;
+    }
+    
+    log_info("User %s requesting online players list", user_id);
+    
+    // Lấy danh sách online players từ database
+    online_players_t *players = user_get_online_players();
+    
+    if (!players) {
+        log_error("Failed to get online players");
+        free(user_id);
+        return;
+    }
+    
+    // Tạo response message
+    message_t resp = {0};
+    resp.type = MSG_ONLINE_PLAYERS_LIST;
+    resp.payload.online_players.count = players->count;
+    
+    // Copy player data
+    for (int i = 0; i < players->count && i < 50; i++) {
+        strncpy(resp.payload.online_players.players[i], 
+                players->usernames[i], 63);
+        resp.payload.online_players.players[i][63] = '\0';
+        
+        resp.payload.online_players.elo_ratings[i] = players->elo_ratings[i];
+        
+        strncpy(resp.payload.online_players.ranks[i], 
+                players->ranks[i], 31);
+        resp.payload.online_players.ranks[i][31] = '\0';
+    }
+    
+    // Send response
+    ssize_t sent = ws_send_message(client_sock, &resp);
+    if (sent <= 0) {
+        log_error("Failed to send online players list to client %d", client_sock);
+    } else {
+        log_info("Sent online players list to client %d (%d players)", 
+                 client_sock, players->count);
+    }
+    
+    // Cleanup
+    online_players_free(players);
     free(user_id);
 }
