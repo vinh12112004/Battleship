@@ -54,7 +54,7 @@ static void auto_load_env() {
 // ======================= MongoDB =======================
 static inline const char* get_mongo_uri() {
     const char* uri = getenv("MONGO_URI");
-    return uri ? uri : "mongodb://localhost:27017";
+    return uri ? uri : "mongodb://localhost:27019";
 }
 
 static inline const char* get_mongo_db() {

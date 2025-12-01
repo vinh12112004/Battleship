@@ -51,9 +51,9 @@ class WebSocketService {
         const READY_SIZE = 165; // game_id[65] + board_state[100]
         const AUTH_SUCCESS_SIZE = this.MAX_JWT_LEN + this.USERNAME_LEN; // 512 + 32 = 544
 
-        // Kích thước của union payload (lấy thành phần lớn nhất)
-        // auth_success_payload là lớn nhất: token[512] + username[32] = 544
-        this.MAX_PAYLOAD_SIZE = this.MAX_JWT_LEN + this.USERNAME_LEN; // 544
+        // Thành phần lớn nhất là online_players_payload:
+        // count(4) + players(50*64) + elo(50*4) + ranks(50*32) = 4 + 3200 + 200 + 1600 = 5004
+        this.MAX_PAYLOAD_SIZE = 5004;
 
         // Kích thước cố định của toàn bộ message_t
         this.MESSAGE_T_SIZE = 4 + this.MAX_JWT_LEN + this.MAX_PAYLOAD_SIZE; // 4 + 512 + 544 = 1060 bytes
