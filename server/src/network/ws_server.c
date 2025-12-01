@@ -105,6 +105,7 @@ void* client_thread(void* arg) {
         }
         
         if (n < 0) {
+            log_debug("%d", n);
             log_error("ws_recv_message error for client %d", client_sock);
             break;
         }

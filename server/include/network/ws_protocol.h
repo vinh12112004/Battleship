@@ -44,8 +44,8 @@ typedef enum {
     MSG_PONG = 14,
     MSG_PLACE_SHIP = 15,
     MSG_PLAYER_READY,
-    MSG_GET_ONLINE_PLAYERS,
-    MSG_ONLINE_PLAYERS_LIST,
+    MSG_GET_ONLINE_PLAYERS = 17,
+    MSG_ONLINE_PLAYERS_LIST = 18,
 } msg_type;
 
 typedef struct {
