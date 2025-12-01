@@ -216,13 +216,6 @@ ssize_t ws_send_message(int sock, message_t *msg) {
     message_t tmp;
     memcpy(&tmp, msg, sizeof(message_t));
     
-    if (msg->type == MSG_PLAYER_MOVE || msg->type == MSG_MOVE_RESULT) {
-        tmp.payload.move.x = htonl(msg->payload.move.x);
-        tmp.payload.move.y = htonl(msg->payload.move.y);
-        if (msg->type == MSG_MOVE_RESULT)
-            tmp.payload.move_res.hit = htonl(msg->payload.move_res.hit);
-    }
-    
     if (ws_send_frame(sock, WS_OPCODE_BINARY, (char*)&tmp, sizeof(message_t)) < 0)
         return -1;
     
@@ -248,13 +241,6 @@ ssize_t ws_recv_message(int sock, message_t *msg) {
     
     memcpy(msg, payload, sizeof(message_t));
     free(payload);
-    
-    if (msg->type == MSG_PLAYER_MOVE || msg->type == MSG_MOVE_RESULT) {
-        msg->payload.move.x = ntohl(msg->payload.move.x);
-        msg->payload.move.y = ntohl(msg->payload.move.y);
-        if (msg->type == MSG_MOVE_RESULT)
-            msg->payload.move_res.hit = ntohl(msg->payload.move_res.hit);
-    }
     
     return sizeof(message_t);
 }

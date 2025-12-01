@@ -1,16 +1,11 @@
-import {
-  createContext,
-  useState,
-  useEffect,
-  useCallback,
-} from "react";
+import { createContext, useState, useEffect, useCallback } from "react";
 import { wsService, MSG_TYPES } from "@/services/wsService";
 import { useAuth } from "@/hooks/useAuth";
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const GameContext = createContext(null);
 
-export function GameProvider({ children }) {
+function GameProvider({ children }) {
   const { user } = useAuth();
   const [gameState, setGameState] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -49,6 +44,7 @@ export function GameProvider({ children }) {
 
     const handleMoveResult = (payload) => {
       console.log("[Game] Move result:", payload);
+
       setGameState((prev) => {
         if (!prev) return null;
 
@@ -57,6 +53,11 @@ export function GameProvider({ children }) {
 
         if (payload.hit) {
           updatedOpponentBoard[index] = "hit";
+
+          if (payload.sunk && payload.sunk.trim() !== "") {
+            console.log(`🚢 ${payload.sunk} sunk!`);
+            // Show notification
+          }
         } else {
           updatedOpponentBoard[index] = "miss";
         }
@@ -64,7 +65,7 @@ export function GameProvider({ children }) {
         return {
           ...prev,
           opponentBoard: updatedOpponentBoard,
-          currentTurn: payload.nextTurn,
+          currentTurn: payload.hit ? prev.currentTurn : payload.nextPlayer,
         };
       });
     };
@@ -198,3 +199,5 @@ export function GameProvider({ children }) {
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }
+
+export default GameProvider;

@@ -2,11 +2,10 @@
 #define WS_PROTOCOL_H
 
 #define MAX_JWT_LEN 512
-#define GRID_SIZE 10
-#define BOARD_SIZE (GRID_SIZE * GRID_SIZE)
 
 #include <stdint.h>
 #include <sys/socket.h>
+#include "game/game_board.h"
 
 // WebSocket opcode
 typedef enum {
@@ -43,20 +42,42 @@ typedef enum {
     MSG_LOGOUT,
     MSG_PING = 13,    
     MSG_PONG = 14,
+    MSG_PLACE_SHIP = 15,
     MSG_PLAYER_READY
 } msg_type;
+
+typedef struct {
+    int ship_type;      // 5=Carrier, 4=Battleship, 3=Cruiser/Sub, 2=Destroyer
+    int row;
+    int col;
+    uint8_t is_horizontal;  // 1=horizontal, 0=vertical
+    uint8_t _padding[3];
+} place_ship_payload;
 
 // Payload structs
 typedef struct { char username[32]; char password[32]; } auth_payload;
 typedef struct { char token[MAX_JWT_LEN]; char username[32]; } auth_success_payload;
 typedef struct { char reason[64]; } auth_failed_payload;
-typedef struct { int x; int y; } move_payload;
-typedef struct { int x; int y; int hit; char sunk[32]; } move_result_payload;
-typedef struct { char opponent[32]; char game_id[64]; } start_game_payload;
-typedef struct { char message[128]; } chat_payload;
-typedef struct { 
-    uint8_t board_state[BOARD_SIZE]; 
+typedef struct __attribute__((packed)) {
     char game_id[65];
+    int row;
+    int col;
+} move_payload;
+typedef struct __attribute__((packed)) {
+    int row;
+    int col;
+    uint8_t is_hit;
+    uint8_t is_sunk;
+    int sunk_ship_type;
+    uint8_t game_over;
+    uint8_t is_your_shot;
+    uint8_t _padding[1];  // Align to 16 bytes
+} move_result_payload;
+typedef struct { char opponent[32]; char game_id[64]; char current_turn[32];} start_game_payload;
+typedef struct { char message[128]; } chat_payload;
+typedef struct __attribute__((packed)) {
+    char game_id[65];
+    uint8_t board_state[BOARD_SIZE];
 } ready_payload;
 
 // Message structure
@@ -71,6 +92,7 @@ typedef struct {
         move_result_payload move_res;
         start_game_payload start_game;
         chat_payload chat;
+        place_ship_payload place_ship;
         ready_payload ready;
     } payload;
 } message_t;
