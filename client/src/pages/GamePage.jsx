@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import NavBar from "../components/common/Navbar";
 import GameBoard from "../components/game/GameBoard";
 import GameInfoPanel from "../components/game/GameInfoPanel";
@@ -10,6 +10,8 @@ import { useGame } from "@/hooks/useGame";
 import BattleshipSeaBackground from "../components/game/BattleshipSeaBackground.jsx";
 import ShipDock from "../components/game/ShipDock.jsx";
 import { wsService, MSG_TYPES } from "@/services/wsService";
+import { toast } from "react-toastify";
+
 const SHIP_DEFINITIONS = [
   { id: "carrier", size: 5 },
   { id: "battleship", size: 4 },
@@ -23,6 +25,7 @@ const REQUIRED_SHIP_COUNT = SHIP_DEFINITIONS.length;
 
 export default function GamePage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   // Giả định `useGame` có các hàm cần thiết (makeMove, sendMessage)
   const { gameState, makeMove, sendMessage, isConnected } = useGame();
 
@@ -41,7 +44,7 @@ export default function GamePage() {
     const handleStartGame = (payload) => {
       console.log("[GamePage] 🎮 START_GAME received:", payload);
 
-      // ✅ 1. Parse JSON từ localStorage
+      // Parse JSON từ localStorage
       const authUserStr = localStorage.getItem("auth_user");
       if (!authUserStr) {
         console.error("[GamePage] ❌ No auth_user in localStorage!");
@@ -59,10 +62,10 @@ export default function GamePage() {
 
       console.log("[GamePage] 🔍 My username:", myUsername);
 
-      // ✅ 2. Compare với current_turn từ server
+      // Compare với current_turn từ server
       const currentTurnUsername = payload.current_turn;
 
-      // ✅ 3. So sánh
+      // So sánh
       const isMyTurn = currentTurnUsername === myUsername;
 
       console.log("[GamePage] Turn Check:", {
@@ -91,7 +94,6 @@ export default function GamePage() {
   useEffect(() => {
     if (gameState) {
       setLocalGameState((prev) => {
-        // 🛑 BẢO VỆ TRẠNG THÁI:
         // Nếu mình đang chờ (waiting) hoặc đang chơi (playing)
         // mà gameState bên ngoài lại bảo là "placing_ships" (do nó chưa update kịp)
         // thì BỎ QUA, không cho phép ghi đè lùi.
@@ -123,61 +125,167 @@ export default function GamePage() {
     }
   }, [gameState]);
 
-  // ✅ 3. Listen for MOVE_RESULT
-  useEffect(() => {
-    const handleMoveResult = (payload) => {
-      console.log("[GamePage] 🎯 MOVE_RESULT received:", payload);
+  // Listen for MOVE_RESULT
+  const handleMoveResult = useCallback((payload) => {
+    console.log("[GamePage] 🎯 MOVE_RESULT received:", payload);
 
+    const handleGameOverNavigation = () => {
+        navigate("/dashboard");
+    };
+
+    // XỬ LÝ TOAST (SIDE EFFECT) RA NGOÀI STATE UPDATE
+    if (payload.is_your_shot) {
+      if (payload.is_hit) {
+        if (payload.is_sunk) {
+          const shipNames = {
+            1: "Patrol Boat",
+            2: "Submarine",
+            3: "Destroyer",
+            4: "Battleship",
+            5: "Carrier",
+          };
+          const shipName = shipNames[payload.sunk_ship_type] || "Unknown Ship";
+          
+          toast.success(`🚢 ${shipName.toUpperCase()} DESTROYED!`, {
+            icon: "💥",
+            style: {
+              background: "#1e293b",
+              color: "#22d3ee",
+              border: "2px solid #22d3ee",
+              fontSize: "16px",
+              fontWeight: "bold",
+            },
+          });
+        } else {
+          toast.info("🎯 Direct Hit!", {
+            autoClose: 1000,
+            style: { background: "#1e293b", color: "#fbbf24" },
+          });
+        }
+      } else {
+        toast.warning("💦 Missed!", {
+          autoClose: 1000,
+          style: { background: "#1e293b", color: "#94a3b8" },
+        });
+      }
+
+      if (payload.game_over) {
+        toast.success("🏆 VICTORY! All enemy ships destroyed!", {
+          autoClose: false,
+          style: { background: "#065f46", color: "#d1fae5", fontSize: "18px" },
+        });
+        handleGameOverNavigation();
+      }
+    } else {
+      // Opponent shot logic
+      if (payload.is_hit) {
+        if (payload.is_sunk) {
+          const shipNames = {
+            1: "Patrol Boat",
+            2: "Submarine",
+            3: "Destroyer",
+            4: "Battleship",
+            5: "Carrier",
+          };
+          const shipName = shipNames[payload.sunk_ship_type] || "Unknown Ship";
+
+          toast.error(`💀 YOUR ${shipName.toUpperCase()} WAS DESTROYED!`, {
+            icon: "🔥",
+            style: {
+              background: "#7f1d1d",
+              color: "#fecaca",
+              border: "2px solid #dc2626",
+              fontSize: "16px",
+              fontWeight: "bold",
+            },
+          });
+        } else {
+          toast.error("💥 Your ship was hit!", {
+            autoClose: 1500,
+            style: { background: "#7f1d1d", color: "#fecaca" },
+          });
+        }
+      } else {
+        toast.info("💦 Opponent missed!", {
+          autoClose: 1000,
+          style: { background: "#1e293b", color: "#94a3b8" },
+        });
+      }
+
+      if (payload.game_over) {
+        toast.error("💀 DEFEAT! All your ships were destroyed!", {
+          autoClose: false,
+          style: { background: "#7f1d1d", color: "#fecaca", fontSize: "18px" },
+        });
+        handleGameOverNavigation();
+      }
+    }
+
+    // CẬP NHẬT STATE (PURE FUNCTION)
+    setLocalGameState((prev) => {
       const index = payload.row * GRID_SIZE + payload.col;
 
-      setLocalGameState((prev) => {
+      if (payload.is_your_shot) {
         const newOpponentBoard = [...prev.opponentBoard];
-
-        // ✅ Update opponent board với kết quả
+        
+        // Update logic
         if (payload.is_hit) {
           newOpponentBoard[index] = "hit";
-          console.log(`[GamePage] ✅ HIT at (${payload.row}, ${payload.col})`);
-
-          if (payload.is_sunk) {
-            console.log(
-              `[GamePage] 🚢 SHIP SUNK! Type: ${payload.sunk_ship_type}`
-            );
-          }
         } else {
           newOpponentBoard[index] = "miss";
-          console.log(`[GamePage] ❌ MISS at (${payload.row}, ${payload.col})`);
         }
 
-        // ✅ Check game over
         if (payload.game_over) {
-          console.log("[GamePage] 🏆 GAME OVER!");
-          alert("🎉 Victory! You sunk all enemy ships!");
           return {
             ...prev,
             opponentBoard: newOpponentBoard,
             phase: "finished",
+            currentTurn: null,
           };
         }
-
-        // ✅ Switch turn
-        const newTurn = prev.currentTurn === "you" ? "opponent" : "you";
 
         return {
           ...prev,
           opponentBoard: newOpponentBoard,
-          currentTurn: newTurn,
+          currentTurn: "opponent",
         };
-      });
-    };
+      } else {
+        // Opponent shot logic
+        const newYourBoard = [...prev.yourBoard];
 
+        if (payload.is_hit) {
+          newYourBoard[index] = "hit";
+        } else {
+          newYourBoard[index] = "miss";
+        }
+
+        if (payload.game_over) {
+          return {
+            ...prev,
+            yourBoard: newYourBoard,
+            phase: "finished",
+            currentTurn: null,
+          };
+        }
+
+        return {
+          ...prev,
+          yourBoard: newYourBoard,
+          currentTurn: "you",
+        };
+      }
+    });
+  }, []);
+
+  useEffect(() => {
     wsService.onMessage(MSG_TYPES.MOVE_RESULT, handleMoveResult);
 
     return () => {
       wsService.offMessage(MSG_TYPES.MOVE_RESULT, handleMoveResult);
     };
-  }, []);
+  }, [handleMoveResult]); // Depend on memoized handler
 
-  // Hàm kiểm tra xem vị trí có hợp lệ để đặt thuyền không (đã giữ nguyên)
+  // Hàm kiểm tra xem vị trí có hợp lệ để đặt thuyền không 
   const isValidPlacement = (board, row, col, size, orientation) => {
     if (orientation !== "horizontal") return false;
     if (row < 0 || row >= GRID_SIZE || col < 0 || col + size > GRID_SIZE) {
@@ -348,6 +456,7 @@ export default function GamePage() {
                 onMove={handleMove}
                 onPlaceShip={handlePlaceShip}
                 GRID_SIZE={GRID_SIZE}
+                draggedShip={draggingShip}
               />
 
               {/* Hiển thị ShipDock chỉ trong giai đoạn đặt thuyền */}

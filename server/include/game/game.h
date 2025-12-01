@@ -68,6 +68,7 @@ game_session_t* game_find_by_player(const char *player_id);
 // Game operations
 bool game_create(const char *player1_id, const char *player2_id, char *out_game_id);
 game_session_t* game_get(const char *game_id);
+game_session_t* game_load_from_db(const char *game_id);
 bool game_place_ship(const char *game_id, const char *player_id, 
                      ship_type_t type, int row, int col, bool is_horizontal);
 shot_result_t game_process_shot(const char *game_id, const char *player_id, int row, int col);

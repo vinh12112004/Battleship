@@ -58,8 +58,21 @@ typedef struct {
 typedef struct { char username[32]; char password[32]; } auth_payload;
 typedef struct { char token[MAX_JWT_LEN]; char username[32]; } auth_success_payload;
 typedef struct { char reason[64]; } auth_failed_payload;
-typedef struct { int x; int y; } move_payload;
-typedef struct { int x; int y; int hit; char sunk[32]; } move_result_payload;
+typedef struct __attribute__((packed)) {
+    char game_id[65];
+    int row;
+    int col;
+} move_payload;
+typedef struct __attribute__((packed)) {
+    int row;
+    int col;
+    uint8_t is_hit;
+    uint8_t is_sunk;
+    int sunk_ship_type;
+    uint8_t game_over;
+    uint8_t is_your_shot;
+    uint8_t _padding[1];  // Align to 16 bytes
+} move_result_payload;
 typedef struct { char opponent[32]; char game_id[64]; char current_turn[32];} start_game_payload;
 typedef struct { char message[128]; } chat_payload;
 typedef struct __attribute__((packed)) {

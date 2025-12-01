@@ -48,7 +48,7 @@ bool board_validate_placement(board_t *board, int row, int col, int length, bool
         int check_row = is_horizontal ? row : row + i;
         int check_col = is_horizontal ? col + i : col;
         
-        // ✅ Access 1D array using INDEX macro
+        // Access 1D array using INDEX macro
         if (board->grid[INDEX(check_row, check_col)] == CELL_SHIP) {
             log_warn("Ship overlaps with existing ship at (%d, %d)", check_row, check_col);
             return false;
@@ -82,16 +82,14 @@ bool board_place_ship(board_t *board, ship_type_t type, int row, int col, bool i
     
     int length = get_ship_length(type);
     
-    // ✅ CHECK TRÙNG LẶP: Kiểm tra xem thuyền này đã đặt chưa
+    // Check trùng lặp
     for (int i = 0; i < board->ship_count; i++) {
         ship_t *existing = &board->ships[i];
         if (existing->type == type && 
             existing->start_row == row && 
             existing->start_col == col &&
             existing->is_horizontal == is_horizontal) {
-            log_warn("Ship already placed at this position: type=%d, pos=(%d,%d)", 
-                     type, row, col);
-            return false;  // ✅ Từ chối duplicate
+            return false;
         }
     }
     
@@ -99,7 +97,6 @@ bool board_place_ship(board_t *board, ship_type_t type, int row, int col, bool i
         return false;
     }
     
-    // Place ship
     ship_t *ship = &board->ships[board->ship_count];
     ship->type = type;
     ship->start_row = row;
@@ -108,19 +105,17 @@ bool board_place_ship(board_t *board, ship_type_t type, int row, int col, bool i
     ship->hits = 0;
     ship->is_sunk = false;
     
-    // Mark cells on 1D grid
     for (int i = 0; i < length; i++) {
         int r = is_horizontal ? row : row + i;
         int c = is_horizontal ? col + i : col;
-        board->grid[INDEX(r, c)] = CELL_SHIP;
+        
+        board->grid[INDEX(r, c)] = CELL_SHIP; 
     }
     
     board->ship_count++;
     board->ships_remaining++;
     
-    log_info("Ship placed: type=%d, pos=(%d,%d), horizontal=%d", 
-             type, row, col, is_horizontal);
-    
+    log_info("Ship placed: type=%d, len=%d, pos=(%d,%d)", type, length, row, col);
     return true;
 }
 
@@ -154,45 +149,71 @@ ship_t* board_get_ship_at(board_t *board, int row, int col) {
 shot_result_t board_process_shot(board_t *board, int row, int col) {
     shot_result_t result = {false, false, 0, false};
     
+    // DEBUG: Log input
+    log_info("=== board_process_shot DEBUG ===");
+    log_info("Shooting at (%d, %d)", row, col);
+    log_info("Board ship_count: %d", board->ship_count);
+    log_info("Board ships_remaining: %d", board->ships_remaining);
+    
     if (!board_is_valid_shot(board, row, col)) {
         log_warn("Invalid shot at (%d, %d)", row, col);
         return result;
     }
     
+    // Check CELL STATE
     cell_state_t cell = board->grid[INDEX(row, col)];
+    log_info("Cell value at (%d,%d): %d (0=WATER, 1=SHIP, 2=HIT, 3=MISS)", 
+             row, col, cell);
     
+    // Nếu ô đó là tàu (CELL_SHIP hoặc ID tàu > 0)
     if (cell == CELL_SHIP) {
-        // HIT!
+        log_info("✅ Cell is SHIP, processing HIT...");
+        
+        // 1. Đánh dấu ô đó đã bị bắn trúng
         board->grid[INDEX(row, col)] = CELL_HIT;
         result.is_hit = true;
         
-        // Find which ship was hit
+        // 2. Tìm xem bắn trúng tàu nào
         ship_t *ship = board_get_ship_at(board, row, col);
         if (ship) {
+            log_info("Found ship: type=%d, pos=(%d,%d), hits=%d",
+                     ship->type, ship->start_row, ship->start_col, ship->hits);
+            
             ship->hits++;
             
-            // Check if ship is sunk
-            if (ship->hits >= (int)ship->type) {
+            // So sánh với ĐỘ DÀI thật của tàu
+            int max_health = get_ship_length(ship->type);
+            
+            log_info("Ship Hit! Current HP: %d/%d", ship->hits, max_health);
+
+            if (ship->hits >= max_health) {
                 ship->is_sunk = true;
                 result.is_sunk = true;
-                result.sunk_ship_type = ship->type;
+                result.sunk_ship_type = (int)ship->type;
                 board->ships_remaining--;
                 
-                log_info("Ship sunk! Type=%s, remaining=%d", 
-                         ship_type_to_string(ship->type), 
-                         board->ships_remaining);
+                log_info("Ship SUNK! Type=%s", ship_type_to_string(ship->type));
                 
-                // Check game over
                 if (board->ships_remaining == 0) {
                     result.game_over = true;
-                    log_info("All ships destroyed! Game over");
+                    log_info("GAME OVER! All ships destroyed");
                 }
             }
+        } else {
+            log_error("❌ Ghost Ship detected at (%d, %d)! Grid says SHIP but no ship struct found.", 
+                     row, col);
+            
+            log_info("=== ALL SHIPS DUMP ===");
+            for (int i = 0; i < board->ship_count; i++) {
+                ship_t *s = &board->ships[i];
+                log_info("Ship %d: type=%d, pos=(%d,%d), horizontal=%d, hits=%d, sunk=%d",
+                         i, s->type, s->start_row, s->start_col,
+                         s->is_horizontal, s->hits, s->is_sunk);
+            }
         }
-        
-        log_info("HIT at (%d, %d)", row, col);
     } else {
-        // MISS
+        log_info("❌ Cell is NOT SHIP (value=%d), marking as MISS", cell);
+        
         board->grid[INDEX(row, col)] = CELL_MISS;
         result.is_hit = false;
         log_info("MISS at (%d, %d)", row, col);
@@ -209,5 +230,38 @@ const char* ship_type_to_string(ship_type_t type) {
         case SHIP_SUBMARINE: return "Submarine";
         case SHIP_PATROL: return "Patrol Boat";
         default: return "Unknown";
+    }
+}
+
+void board_debug_print(board_t *board, const char *label) {
+    log_info("=== BOARD DEBUG: %s ===", label);
+    log_info("Ship count: %d, Ships remaining: %d", 
+             board->ship_count, board->ships_remaining);
+    
+    // Print grid
+    log_info("Grid (0=WATER, 1=SHIP, 2=HIT, 3=MISS):");
+    for (int y = 0; y < 10; y++) {
+        char row_str[200] = {0};
+        char row_label[10];
+        snprintf(row_label, sizeof(row_label), "Row %d: ", y);
+        strcat(row_str, row_label);
+        
+        for (int x = 0; x < 10; x++) {
+            char cell[5];
+            snprintf(cell, sizeof(cell), "%2d ", board->grid[y * 10 + x]);
+            strcat(row_str, cell);
+        }
+        log_info("%s", row_str);
+    }
+    
+    // Print ships
+    log_info("Ships:");
+    for (int i = 0; i < board->ship_count; i++) {
+        ship_t *ship = &board->ships[i];
+        int ship_len = get_ship_length(ship->type);
+        log_info("  Ship %d: type=%d (%s), pos=(%d,%d), horizontal=%d, hits=%d/%d, sunk=%d",
+                 i, ship->type, ship_type_to_string(ship->type),
+                 ship->start_row, ship->start_col, ship->is_horizontal,
+                 ship->hits, ship_len, ship->is_sunk);
     }
 }

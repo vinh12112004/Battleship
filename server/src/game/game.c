@@ -306,6 +306,82 @@ game_session_t* game_get(const char *game_id) {
     return game;
 }
 
+game_session_t* game_load_from_db(const char *game_id) {
+    mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
+    if (!client) return NULL;
+
+    mongoc_collection_t *collection = mongo_get_collection(client, COLLECTION_GAMES);
+    if (!collection) {
+        mongo_release_client(g_mongo_ctx, client);
+        return NULL;
+    }
+    
+    bson_t *query = bson_new();
+    bson_oid_t oid;
+    bson_oid_init_from_string(&oid, game_id);
+    BSON_APPEND_OID(query, "_id", &oid);
+    
+    mongoc_cursor_t *cursor = mongoc_collection_find_with_opts(collection, query, NULL, NULL);
+    const bson_t *doc;
+    
+    game_session_t *game = NULL;
+    
+    if (mongoc_cursor_next(cursor, &doc)) {
+        game = (game_session_t*)malloc(sizeof(game_session_t));
+        memset(game, 0, sizeof(game_session_t));
+        
+        bson_iter_t iter;
+        
+        // Parse game_id
+        if (bson_iter_init_find(&iter, doc, "_id")) {
+            bson_oid_to_string(bson_iter_oid(&iter), game->game_id);
+        }
+        
+        if (bson_iter_init_find(&iter, doc, "player1_id"))
+            strncpy(game->player1_id, bson_iter_utf8(&iter, NULL), 63);
+        
+        if (bson_iter_init_find(&iter, doc, "player2_id"))
+            strncpy(game->player2_id, bson_iter_utf8(&iter, NULL), 63);
+        
+        if (bson_iter_init_find(&iter, doc, "phase")) {
+            const char *state_str = bson_iter_utf8(&iter, NULL);
+            if (strcmp(state_str, "placing_ships") == 0)
+                game->state = GAME_STATE_PLACING_SHIPS;
+            else if (strcmp(state_str, "playing") == 0)
+                game->state = GAME_STATE_PLAYING;
+            else if (strcmp(state_str, "finished") == 0)
+                game->state = GAME_STATE_FINISHED;
+        }
+        
+        if (bson_iter_init_find(&iter, doc, "current_turn"))
+            strncpy(game->current_turn, bson_iter_utf8(&iter, NULL), 63);
+        
+        if (bson_iter_init_find(&iter, doc, "player1_ready"))
+            game->player1_ready = bson_iter_bool(&iter);
+        
+        if (bson_iter_init_find(&iter, doc, "player2_ready"))
+            game->player2_ready = bson_iter_bool(&iter);
+        
+        // Load boards
+        bson_to_board(doc, "player1_board", &game->player1_board);
+        bson_to_board(doc, "player2_board", &game->player2_board);
+        
+        // Add to cache
+        if (active_game_count < MAX_ACTIVE_GAMES) {
+            active_games[active_game_count++] = game;
+        }
+        
+        log_info("Game loaded from DB: %s", game_id);
+    }
+    
+    mongoc_cursor_destroy(cursor);
+    bson_destroy(query);
+    mongoc_collection_destroy(collection);
+    mongo_release_client(g_mongo_ctx, client);
+    
+    return game;
+}
+
 // ==================== Game Update (sync to DB) ====================
 static bool game_sync_to_db(game_session_t *game) {
     mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
@@ -526,11 +602,9 @@ shot_result_t game_process_shot(const char *game_id, const char *player_id, int 
         log_info("🏆 Game over! Winner: %s", player_id);
         game_end(game_id, player_id);
     } else {
-        // ✅ Switch turn nếu chưa kết thúc
         game_switch_turn(game);
     }
     
-    // ✅ Sync to DB
     game_sync_to_db(game);
     
     return result;
@@ -743,50 +817,268 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
     if (mongoc_collection_update_one(collection, query, update, NULL, NULL, &error)) {
         success = true;
         
+        // ✅ RELOAD GAME FROM DB TO UPDATE IN-MEMORY STATE
+        game_session_t *game = game_get(game_id);
+        if (!game) {
+            // Game chưa có trong memory → load từ DB
+            log_warn("Game not in cache, loading from DB: %s", game_id);
+            game = game_load_from_db(game_id);
+        } else {
+            // Game đã có trong memory → reload board từ DB
+            log_info("Reloading board from DB for game: %s", game_id);
+            
+            // ✅ Re-fetch document từ MongoDB
+            bson_t *reload_query = bson_new();
+            bson_oid_t reload_oid;
+            bson_oid_init_from_string(&reload_oid, game_id);
+            BSON_APPEND_OID(reload_query, "_id", &reload_oid);
+            
+            mongoc_cursor_t *reload_cursor = mongoc_collection_find_with_opts(
+                collection, reload_query, NULL, NULL
+            );
+            
+            const bson_t *reload_doc;
+            if (mongoc_cursor_next(reload_cursor, &reload_doc)) {
+    // ✅ Update in-memory board từ MongoDB
+    if (is_p1) {
+        bson_to_board(reload_doc, "player1_board", &game->player1_board);
+        log_info("✅ Reloaded player1_board from DB");
+        
+        // ✅ DEBUG: Dump grid state
+        log_info("=== PLAYER1 GRID STATE ===");
+        for (int y = 0; y < 10; y++) {
+            char row_str[200] = {0};
+            for (int x = 0; x < 10; x++) {
+                char cell[5];
+                snprintf(cell, sizeof(cell), "%2d ", game->player1_board.grid[y * 10 + x]);
+                strcat(row_str, cell);
+            }
+            log_info("Row %d: %s", y, row_str);
+        }
+        
+        // ✅ ========== RECONSTRUCT SHIPS FROM GRID PATTERN ==========
+        log_info("=== RECONSTRUCTING PLAYER1 SHIPS ===");
+        
+        // Reset ships array
+        game->player1_board.ship_count = 0;
+        game->player1_board.ships_remaining = 0;
+        memset(game->player1_board.ships, 0, sizeof(game->player1_board.ships));
+        
+        // Track visited cells
+        bool visited[BOARD_SIZE] = {false};
+        
+        for (int row = 0; row < GRID_SIZE; row++) {
+            for (int col = 0; col < GRID_SIZE; col++) {
+                int index = row * GRID_SIZE + col;
+                int ship_size = game->player1_board.grid[index];
+                
+                // Skip if visited or water
+                if (visited[index] || ship_size == 0) {
+                    continue;
+                }
+                
+                // Detect ship orientation (horizontal)
+                int length = 0;
+                for (int i = 0; i < ship_size && col + i < GRID_SIZE; i++) {
+                    int check_index = row * GRID_SIZE + (col + i);
+                    if (game->player1_board.grid[check_index] == ship_size) {
+                        length++;
+                        visited[check_index] = true;
+                    } else {
+                        break;
+                    }
+                }
+                
+                // Found complete ship
+                if (length == ship_size && game->player1_board.ship_count < MAX_SHIPS) {
+                    ship_t *ship = &game->player1_board.ships[game->player1_board.ship_count];
+                    
+                    // Map size to type
+                    switch (ship_size) {
+                        case 5: ship->type = SHIP_CARRIER; break;
+                        case 4: ship->type = SHIP_BATTLESHIP; break;
+                        case 3: ship->type = SHIP_DESTROYER; break;
+                        case 2: ship->type = SHIP_SUBMARINE; break;
+                        case 1: ship->type = SHIP_PATROL; break;
+                        default: ship->type = SHIP_CARRIER; break;
+                    }
+                    
+                    ship->start_row = row;
+                    ship->start_col = col;
+                    ship->is_horizontal = true;
+                    ship->hits = 0;
+                    ship->is_sunk = false;
+                    
+                    // ✅ CONVERT GRID VALUES FROM SIZE → CELL_SHIP
+                    for (int i = 0; i < ship_size; i++) {
+                        game->player1_board.grid[row * GRID_SIZE + (col + i)] = CELL_SHIP;
+                    }
+                    
+                    game->player1_board.ship_count++;
+                    game->player1_board.ships_remaining++;
+                    
+                    log_info("✅ Reconstructed ship %d: type=%d, pos=(%d,%d), size=%d", 
+                             game->player1_board.ship_count - 1, ship->type, row, col, ship_size);
+                }
+            }
+        }
+        
+        log_info("✅ Reconstruction complete: %d ships found", game->player1_board.ship_count);
+        
+        // ✅ DEBUG: Dump ships
+        log_info("=== PLAYER1 SHIPS (AFTER RECONSTRUCTION) ===");
+        for (int i = 0; i < game->player1_board.ship_count; i++) {
+            ship_t *ship = &game->player1_board.ships[i];
+            log_info("Ship %d: type=%d, pos=(%d,%d), horizontal=%d, hits=%d, sunk=%d",
+                     i, ship->type, ship->start_row, ship->start_col,
+                     ship->is_horizontal, ship->hits, ship->is_sunk);
+        }
+        
+    } else {
+        // ✅ ========== SAME LOGIC FOR PLAYER 2 ==========
+        bson_to_board(reload_doc, "player2_board", &game->player2_board);
+        log_info("✅ Reloaded player2_board from DB");
+        
+        // ✅ DEBUG: Dump grid state
+        log_info("=== PLAYER2 GRID STATE ===");
+        for (int y = 0; y < 10; y++) {
+            char row_str[200] = {0};
+            for (int x = 0; x < 10; x++) {
+                char cell[5];
+                snprintf(cell, sizeof(cell), "%2d ", game->player2_board.grid[y * 10 + x]);
+                strcat(row_str, cell);
+            }
+            log_info("Row %d: %s", y, row_str);
+        }
+        
+        // ✅ RECONSTRUCT SHIPS
+        log_info("=== RECONSTRUCTING PLAYER2 SHIPS ===");
+        
+        game->player2_board.ship_count = 0;
+        game->player2_board.ships_remaining = 0;
+        memset(game->player2_board.ships, 0, sizeof(game->player2_board.ships));
+        
+        bool visited[BOARD_SIZE] = {false};
+        
+        for (int row = 0; row < GRID_SIZE; row++) {
+            for (int col = 0; col < GRID_SIZE; col++) {
+                int index = row * GRID_SIZE + col;
+                int ship_size = game->player2_board.grid[index];
+                
+                if (visited[index] || ship_size == 0) {
+                    continue;
+                }
+                
+                int length = 0;
+                for (int i = 0; i < ship_size && col + i < GRID_SIZE; i++) {
+                    int check_index = row * GRID_SIZE + (col + i);
+                    if (game->player2_board.grid[check_index] == ship_size) {
+                        length++;
+                        visited[check_index] = true;
+                    } else {
+                        break;
+                    }
+                }
+                
+                if (length == ship_size && game->player2_board.ship_count < MAX_SHIPS) {
+                    ship_t *ship = &game->player2_board.ships[game->player2_board.ship_count];
+                    
+                    switch (ship_size) {
+                        case 5: ship->type = SHIP_CARRIER; break;
+                        case 4: ship->type = SHIP_BATTLESHIP; break;
+                        case 3: ship->type = SHIP_DESTROYER; break;
+                        case 2: ship->type = SHIP_SUBMARINE; break;
+                        case 1: ship->type = SHIP_PATROL; break;
+                        default: ship->type = SHIP_CARRIER; break;
+                    }
+                    
+                    ship->start_row = row;
+                    ship->start_col = col;
+                    ship->is_horizontal = true;
+                    ship->hits = 0;
+                    ship->is_sunk = false;
+                    
+                    // ✅ CONVERT GRID VALUES
+                    for (int i = 0; i < ship_size; i++) {
+                        game->player2_board.grid[row * GRID_SIZE + (col + i)] = CELL_SHIP;
+                    }
+                    
+                    game->player2_board.ship_count++;
+                    game->player2_board.ships_remaining++;
+                    
+                    log_info("✅ Reconstructed ship %d: type=%d, pos=(%d,%d), size=%d", 
+                             game->player2_board.ship_count - 1, ship->type, row, col, ship_size);
+                }
+            }
+        }
+        
+        log_info("✅ Reconstruction complete: %d ships found", game->player2_board.ship_count);
+        
+        // ✅ DEBUG: Dump ships
+        log_info("=== PLAYER2 SHIPS (AFTER RECONSTRUCTION) ===");
+        for (int i = 0; i < game->player2_board.ship_count; i++) {
+            ship_t *ship = &game->player2_board.ships[i];
+            log_info("Ship %d: type=%d, pos=(%d,%d), horizontal=%d, hits=%d, sunk=%d",
+                     i, ship->type, ship->start_row, ship->start_col,
+                     ship->is_horizontal, ship->hits, ship->is_sunk);
+        }
+    }
+}
+            
+            mongoc_cursor_destroy(reload_cursor);
+            bson_destroy(reload_query);
+        }
+        
         // Nếu cả 2 đã ready -> Gửi thông báo Start Game
-        if (both_ready) {
-            game_session_t *game = game_get(game_id);
-            if (game) {
-                game->state = GAME_STATE_PLAYING;
-                log_info("Game %s started! Both players ready.", game_id);
-                log_info("In-memory game state updated to PLAYING");
-                
-                // --- Gửi tin nhắn START_GAME ---
-                message_t start_msg = {0};
-                start_msg.type = MSG_START_GAME;
-                
-                strncpy(start_msg.payload.start_game.game_id, game_id, 63);
-                
-                // ✅ Fetch username để gửi current_turn
-                user_t *p1_user_for_msg = user_find_by_id(p1_id);
-                if (p1_user_for_msg) {
-                    strncpy(start_msg.payload.start_game.current_turn, p1_user_for_msg->username, 31);
-                    user_free(p1_user_for_msg);
-                }
-
-                // Gửi cho Player 1
-                if (game->player1_socket > 0) {
-                    user_t *p2_user = user_find_by_id(p2_id);
-                    if (p2_user) {
-                        strncpy(start_msg.payload.start_game.opponent, p2_user->username, 31);
-                        user_free(p2_user);
-                    }
-                    ws_send_message(game->player1_socket, &start_msg);
-                    log_info("✅ Sent START_GAME to player1 (socket %d)", game->player1_socket);
-                }
-                
-                // Gửi cho Player 2
-                if (game->player2_socket > 0) {
-                    user_t *p1_user_again = user_find_by_id(p1_id);
-                    if (p1_user_again) {
-                        strncpy(start_msg.payload.start_game.opponent, p1_user_again->username, 31);
-                        user_free(p1_user_again);
-                    }
-                    ws_send_message(game->player2_socket, &start_msg);
-                    log_info("✅ Sent START_GAME to player2 (socket %d)", game->player2_socket);
-                }
+        if (both_ready && game) {
+            game->state = GAME_STATE_PLAYING;
+            log_info("Game %s started! Both players ready.", game_id);
+            log_info("In-memory game state updated to PLAYING");
+            
+            // ✅ DEBUG: Log board state
+            if (is_p1) {
+                log_info("Player1 board: ship_count=%d, ships_remaining=%d",
+                         game->player1_board.ship_count,
+                         game->player1_board.ships_remaining);
             } else {
-                log_error("Game session not found in memory: %s", game_id);
+                log_info("Player2 board: ship_count=%d, ships_remaining=%d",
+                         game->player2_board.ship_count,
+                         game->player2_board.ships_remaining);
+            }
+            
+            // --- Gửi tin nhắn START_GAME ---
+            message_t start_msg = {0};
+            start_msg.type = MSG_START_GAME;
+            
+            strncpy(start_msg.payload.start_game.game_id, game_id, 63);
+            
+            // ✅ Fetch username để gửi current_turn
+            user_t *p1_user_for_msg = user_find_by_id(p1_id);
+            if (p1_user_for_msg) {
+                strncpy(start_msg.payload.start_game.current_turn, p1_user_for_msg->username, 31);
+                user_free(p1_user_for_msg);
+            }
+
+            // Gửi cho Player 1
+            if (game->player1_socket > 0) {
+                user_t *p2_user = user_find_by_id(p2_id);
+                if (p2_user) {
+                    strncpy(start_msg.payload.start_game.opponent, p2_user->username, 31);
+                    user_free(p2_user);
+                }
+                ws_send_message(game->player1_socket, &start_msg);
+                log_info("✅ Sent START_GAME to player1 (socket %d)", game->player1_socket);
+            }
+            
+            // Gửi cho Player 2
+            if (game->player2_socket > 0) {
+                user_t *p1_user_again = user_find_by_id(p1_id);
+                if (p1_user_again) {
+                    strncpy(start_msg.payload.start_game.opponent, p1_user_again->username, 31);
+                    user_free(p1_user_again);
+                }
+                ws_send_message(game->player2_socket, &start_msg);
+                log_info("✅ Sent START_GAME to player2 (socket %d)", game->player2_socket);
             }
         }
     } else {

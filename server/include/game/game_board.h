@@ -59,5 +59,6 @@ typedef struct {
 shot_result_t board_process_shot(board_t *board, int row, int col);
 ship_t* board_get_ship_at(board_t *board, int row, int col);
 const char* ship_type_to_string(ship_type_t type);
+void board_debug_print(board_t *board, const char *label);
 
 #endif

@@ -43,8 +43,8 @@ class WebSocketService {
     this.START_GAME_PAYLOAD_LEN = 32;
 
     const PLACE_SHIP_SIZE = 16; // ship_type(4) + row(4) + col(4) + is_horizontal(1) + padding(3)
-    const MOVE_SIZE = 8; // x(4) + y(4)
-    const MOVE_RESULT_SIZE = 44; // x(4) + y(4) + hit(4) + sunk[32]
+    const MOVE_SIZE = 73; // ✅ CORRECT: game_id(65) + row(4) + col(4) = 73 bytes (packed)
+    const MOVE_RESULT_SIZE = 16; // ✅ row(4) + col(4) + is_hit(1) + is_sunk(1) + sunk_ship_type(4) + game_over(1) + padding(1)
     const START_GAME_SIZE = 128; // opponent[32] + game_id[64] + current_turn[32]
     const READY_SIZE = 165; // game_id[65] + board_state[100]
     const AUTH_SUCCESS_SIZE = this.MAX_JWT_LEN + this.USERNAME_LEN; // 512 + 32 = 544
@@ -327,17 +327,17 @@ class WebSocketService {
         .join(" ");
       console.log("[WS] PLACE_SHIP hex dump (first 16 bytes):", hexDump);
     } else if (type === MSG_TYPES.PLAYER_MOVE) {
-      // ✅ Serialize: game_id (65) + row (4) + col (4)
-      const gameIdBytes = new TextEncoder().encode(payload.game_id);
-      uint8.set(gameIdBytes.slice(0, 64), this.OFFSET_PAYLOAD);
-      uint8[this.OFFSET_PAYLOAD + 64] = 0;
+      // Serialize: game_id (65) + row (4) + col (4) = 73 bytes
+        const gameIdBytes = new TextEncoder().encode(payload.game_id);
+        uint8.set(gameIdBytes.slice(0, 64), this.OFFSET_PAYLOAD);
+        uint8[this.OFFSET_PAYLOAD + 64] = 0; // Null terminator
 
-      view.setInt32(this.OFFSET_PAYLOAD + 65, payload.row, true);
-      view.setInt32(this.OFFSET_PAYLOAD + 69, payload.col, true);
+        view.setInt32(this.OFFSET_PAYLOAD + 65, payload.row, true);
+        view.setInt32(this.OFFSET_PAYLOAD + 69, payload.col, true);
 
-      console.log(
-        `[WS] Serialized PLAYER_MOVE: game_id=${payload.game_id}, row=${payload.row}, col=${payload.col}`
-      );
+        console.log(
+            `[WS] Serialized PLAYER_MOVE: game_id=${payload.game_id}, row=${payload.row}, col=${payload.col}`
+        );
     } else if (type === MSG_TYPES.CHAT) {
       const chatBytes = new TextEncoder().encode(payload.message);
       uint8.set(chatBytes.slice(0, this.CHAT_LEN - 1), this.OFFSET_PAYLOAD);
@@ -404,15 +404,16 @@ class WebSocketService {
       // Đọc reason TỪ BÊN TRONG PAYLOAD (offset 516)
       payload.reason = decodeCString(this.OFFSET_PAYLOAD, this.REASON_LEN);
     } else if (type === MSG_TYPES.MOVE_RESULT) {
-      // ✅ Deserialize: row(4) + col(4) + is_hit(1) + is_sunk(1) + sunk_ship_type(4) + game_over(1)
-      payload.row = view.getInt32(this.OFFSET_PAYLOAD, true);
-      payload.col = view.getInt32(this.OFFSET_PAYLOAD + 4, true);
-      payload.is_hit = view.getUint8(this.OFFSET_PAYLOAD + 8) === 1;
-      payload.is_sunk = view.getUint8(this.OFFSET_PAYLOAD + 9) === 1;
-      payload.sunk_ship_type = view.getInt32(this.OFFSET_PAYLOAD + 10, true);
-      payload.game_over = view.getUint8(this.OFFSET_PAYLOAD + 14) === 1;
+      // Deserialize: row(4) + col(4) + is_hit(1) + is_sunk(1) + sunk_ship_type(4) + game_over(1) + is_your_shot(1)
+        payload.row = view.getInt32(this.OFFSET_PAYLOAD, true);
+        payload.col = view.getInt32(this.OFFSET_PAYLOAD + 4, true);
+        payload.is_hit = view.getUint8(this.OFFSET_PAYLOAD + 8) === 1;
+        payload.is_sunk = view.getUint8(this.OFFSET_PAYLOAD + 9) === 1;
+        payload.sunk_ship_type = view.getInt32(this.OFFSET_PAYLOAD + 10, true);
+        payload.game_over = view.getUint8(this.OFFSET_PAYLOAD + 14) === 1;
+        payload.is_your_shot = view.getUint8(this.OFFSET_PAYLOAD + 15) === 1;
 
-      console.log("[WS] MOVE_RESULT deserialized:", payload);
+        console.log("[WS] MOVE_RESULT deserialized:", payload);
     } else if (type === MSG_TYPES.START_GAME) {
       // ✅ DESERIALIZE START_GAME: opponent (32 bytes) + game_id (64 bytes) + current_turn[32] = 128 bytes
       payload.opponent = decodeCString(this.OFFSET_PAYLOAD, 32);

@@ -47,7 +47,7 @@ void handle_message(int client_sock, message_t *msg) {
             handle_login(client_sock, &msg->payload.auth);
             break;
         case MSG_PLAYER_MOVE:
-            handle_player_move(client_sock, &msg->payload.move);
+            handle_player_move(client_sock, msg);
             break;
         case MSG_CHAT:
             handle_chat(client_sock, &msg->payload.chat);
@@ -191,63 +191,68 @@ void handle_logout(int client_sock, message_t *msg) {
 void handle_player_move(int client_sock, message_t *msg) {
     const char *token = msg->token;
     move_payload *move = &msg->payload.move;
-    
-    // ✅ Verify JWT
+
+    // Verify JWT
     char *user_id = jwt_verify(token);
     if (!user_id) {
         log_error("Invalid token in PLAYER_MOVE");
         return;
     }
     
+    // Validate coordinates
+    if (move->row < 0 || move->row >= 10 || move->col < 0 || move->col >= 10) {
+        log_error("Invalid coordinates from player %s: row=%d, col=%d",
+                  user_id, move->row, move->col);
+        free(user_id);
+        return;
+    }
+    
     log_info("Player %s shooting at (%d, %d) in game %s", 
              user_id, move->row, move->col, move->game_id);
     
-    // ✅ Process shot
+    // Process shot
     shot_result_t result = game_process_shot(move->game_id, user_id, move->row, move->col);
     
-    // ✅ Send result back to shooter
+    // ===== Response to shooter =====
     message_t response = {0};
     response.type = MSG_MOVE_RESULT;
-    strncpy(response.token, token, MAX_JWT_LEN - 1);
-    
     response.payload.move_res.row = move->row;
     response.payload.move_res.col = move->col;
     response.payload.move_res.is_hit = result.is_hit;
     response.payload.move_res.is_sunk = result.is_sunk;
     response.payload.move_res.sunk_ship_type = result.sunk_ship_type;
     response.payload.move_res.game_over = result.game_over;
+    response.payload.move_res.is_your_shot = 1;  // ✅ SHOOTER: is_your_shot = 1
     
     ws_send_message(client_sock, &response);
-    
     log_info("✅ Sent MOVE_RESULT to shooter: hit=%d, sunk=%d, game_over=%d",
              result.is_hit, result.is_sunk, result.game_over);
     
-    // ✅ Notify opponent about the move
+    // ===== Send to opponent =====
     game_session_t *game = game_get(move->game_id);
     if (game) {
-        int opponent_socket = 0;
+        int opponent_sock = (client_sock == game->player1_socket) 
+                            ? game->player2_socket 
+                            : game->player1_socket;
         
-        if (strcmp(game->player1_id, user_id) == 0) {
-            opponent_socket = game->player2_socket;
-        } else if (strcmp(game->player2_id, user_id) == 0) {
-            opponent_socket = game->player1_socket;
-        }
-        
-        if (opponent_socket > 0) {
+        if (opponent_sock > 0) {
             message_t opponent_msg = {0};
             opponent_msg.type = MSG_MOVE_RESULT;
-            
             opponent_msg.payload.move_res.row = move->row;
             opponent_msg.payload.move_res.col = move->col;
             opponent_msg.payload.move_res.is_hit = result.is_hit;
             opponent_msg.payload.move_res.is_sunk = result.is_sunk;
             opponent_msg.payload.move_res.sunk_ship_type = result.sunk_ship_type;
             opponent_msg.payload.move_res.game_over = result.game_over;
+            opponent_msg.payload.move_res.is_your_shot = 0;  // ✅ DEFENDER: is_your_shot = 0
             
-            ws_send_message(opponent_socket, &opponent_msg);
-            
-            log_info("✅ Sent MOVE_RESULT to opponent (socket %d)", opponent_socket);
+            ws_send_message(opponent_sock, &opponent_msg);
+            log_info("✅ Sent MOVE_RESULT to opponent (socket %d)", opponent_sock);
+        } else {
+            log_warn("Opponent socket not found for game %s", move->game_id);
         }
+    } else {
+        log_error("Game session not found: %s", move->game_id);
     }
     
     free(user_id);
