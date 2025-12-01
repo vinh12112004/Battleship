@@ -16,6 +16,13 @@ typedef struct {
     char *rank;
 } user_t;
 
+typedef struct {
+    int count;
+    char **usernames;
+    int *elo_ratings;
+    char **ranks;
+} online_players_t;
+
 // User operations
 user_t* user_create(const char *username, const char *email, const char *password_hash);
 user_t* user_find_by_username(const char *username);
@@ -24,5 +31,8 @@ user_t* user_find_by_id(const char *user_id);
 bool user_update_status(const char *user_id, const char *status);
 bool user_update_elo(const char *user_id, int new_elo);
 void user_free(user_t *user);
+
+online_players_t* user_get_online_players(void);
+void online_players_free(online_players_t *players);
 
 #endif // MONGO_USER_H

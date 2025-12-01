@@ -43,7 +43,9 @@ typedef enum {
     MSG_PING = 13,    
     MSG_PONG = 14,
     MSG_PLACE_SHIP = 15,
-    MSG_PLAYER_READY
+    MSG_PLAYER_READY,
+    MSG_GET_ONLINE_PLAYERS = 17,
+    MSG_ONLINE_PLAYERS_LIST = 18,
 } msg_type;
 
 typedef struct {
@@ -79,7 +81,12 @@ typedef struct __attribute__((packed)) {
     char game_id[65];
     uint8_t board_state[BOARD_SIZE];
 } ready_payload;
-
+typedef struct {
+    int count;
+    char players[50][64];  // Tối đa 50 players, mỗi username 64 chars
+    int elo_ratings[50];
+    char ranks[50][32];
+} online_players_payload;
 // Message structure
 typedef struct {
     msg_type type;
@@ -94,6 +101,7 @@ typedef struct {
         chat_payload chat;
         place_ship_payload place_ship;
         ready_payload ready;
+        online_players_payload online_players;
     } payload;
 } message_t;
 

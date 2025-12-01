@@ -155,9 +155,8 @@ int ws_recv_frame(int sock, ws_frame_t *frame, char **payload) {
         if (bytes_received == 0) {
             log_info("Client closed connection normally");
         } else {
-            int error = errno;
-            perror("recv() error");
-            log_error("recv() returned %d, errno=%d", bytes_received, error);
+            // In thêm errno để debug
+            log_error("recv header failed: ret=%d, errno=%d", bytes_received, errno);
         }
         return -1;
     }
@@ -167,21 +166,32 @@ int ws_recv_frame(int sock, ws_frame_t *frame, char **payload) {
     frame->mask = (header[1] & 0x80) >> 7;
     frame->payload_len = header[1] & 0x7F;
     
-    // Extended payload
+    // Log opcode để biết client đang gửi gì (Text hay Binary)
+    log_debug("Frame received: Opcode=0x%X, Len=%llu", frame->opcode, frame->payload_len);
+
     if (frame->payload_len == 126) {
         uint8_t len_bytes[2];
-        if (recv(sock, (char*)len_bytes, 2, 0) != 2) return -1;
+        if (recv(sock, (char*)len_bytes, 2, 0) != 2) {
+            log_error("Failed to read extended payload length (16 bit)");
+            return -1;
+        }
         frame->payload_len = (len_bytes[0] << 8) | len_bytes[1];
     } else if (frame->payload_len == 127) {
         uint8_t len_bytes[8];
-        if (recv(sock, (char*)len_bytes, 8, 0) != 8) return -1;
+        if (recv(sock, (char*)len_bytes, 8, 0) != 8) {
+            log_error("Failed to read extended payload length (64 bit)");
+            return -1;
+        }
         frame->payload_len = 0;
         for (int i = 0; i < 8; i++)
             frame->payload_len = (frame->payload_len << 8) | len_bytes[i];
     }
     
     if (frame->mask) {
-        if (recv(sock, (char*)frame->masking_key, 4, 0) != 4) return -1;
+        if (recv(sock, (char*)frame->masking_key, 4, 0) != 4) {
+            log_error("Failed to read masking key");
+            return -1;
+        }
     }
     
     if (frame->payload_len > 0) {
@@ -192,6 +202,7 @@ int ws_recv_frame(int sock, ws_frame_t *frame, char **payload) {
         while (received < frame->payload_len) {
             int n = recv(sock, *payload + received, frame->payload_len - received, 0);
             if (n <= 0) {
+                log_error("Failed to read payload body. Read %zu/%llu bytes", received, frame->payload_len);
                 free(*payload);
                 return -1;
             }
@@ -229,15 +240,40 @@ ssize_t ws_recv_message(int sock, message_t *msg) {
     
     if (ws_recv_frame(sock, &frame, &payload) < 0) return -1;
     
-    if (frame.opcode == WS_OPCODE_CLOSE) { free(payload); return 0; }
-    if (frame.opcode == WS_OPCODE_PING) {
-        ws_send_frame(sock, WS_OPCODE_PONG, payload, frame.payload_len);
-        free(payload);
-        return ws_recv_message(sock, msg);
+    if (frame.opcode == WS_OPCODE_CLOSE) { 
+        log_info("Received CLOSE frame");
+        free(payload); 
+        return 0; 
     }
     
-    if (frame.opcode != WS_OPCODE_BINARY) { free(payload); return -1; }
-    if (frame.payload_len != sizeof(message_t)) { free(payload); return -1; }
+    if (frame.opcode == WS_OPCODE_PING) {
+        log_debug("Received PING, sending PONG");
+        ws_send_frame(sock, WS_OPCODE_PONG, payload, frame.payload_len);
+        free(payload);
+        return ws_recv_message(sock, msg); // Đệ quy để đọc message tiếp theo
+    }
+    
+    // DEBUG: Kiểm tra xem có phải client gửi nhầm Text Frame không
+    if (frame.opcode == WS_OPCODE_TEXT) {
+        log_warn("Received TEXT frame but server expects BINARY struct message_t.");
+        log_warn("Payload content: %s", payload ? payload : "(null)");
+        // Nếu bạn muốn hỗ trợ JSON trong tương lai, parse payload tại đây.
+        // Hiện tại code đang ép kiểu binary struct, nên text sẽ gây lỗi dữ liệu rác.
+        free(payload);
+        return -1; 
+    }
+
+    if (frame.opcode != WS_OPCODE_BINARY) { 
+        log_error("Unsupported Opcode: 0x%X", frame.opcode);
+        free(payload); 
+        return -1; 
+    }
+    
+    if (frame.payload_len != sizeof(message_t)) { 
+        log_error("Size mismatch! Expected %lu bytes (sizeof message_t), got %llu bytes", sizeof(message_t), frame.payload_len);
+        free(payload); 
+        return -1; 
+    }
     
     memcpy(msg, payload, sizeof(message_t));
     free(payload);
