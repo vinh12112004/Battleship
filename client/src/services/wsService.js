@@ -18,6 +18,7 @@ const MSG_TYPES = {
     PLAYER_READY: 16,
     GET_ONLINE_PLAYERS: 17,
     ONLINE_PLAYERS_LIST: 18,
+    CHAT_MESSAGE: 19,
 };
 
 class WebSocketService {
@@ -42,6 +43,7 @@ class WebSocketService {
         this.PASSWORD_LEN = 32;
         this.REASON_LEN = 64;
         this.CHAT_LEN = 128;
+        this.GAME_ID_LEN = 64;
         this.START_GAME_PAYLOAD_LEN = 32;
 
         const PLACE_SHIP_SIZE = 16; // ship_type(4) + row(4) + col(4) + is_horizontal(1) + padding(3)
@@ -351,11 +353,74 @@ class WebSocketService {
                 `[WS] Serialized PLAYER_MOVE: game_id=${payload.game_id}, row=${payload.row}, col=${payload.col}`
             );
         } else if (type === MSG_TYPES.CHAT) {
-            const chatBytes = new TextEncoder().encode(payload.message);
+            console.log("[WS] === CHAT SERIALIZATION START ===");
+            console.log("[WS] Payload:", payload);
+            console.log("[WS] OFFSET_PAYLOAD:", this.OFFSET_PAYLOAD);
+            console.log("[WS] GAME_ID_LEN:", this.GAME_ID_LEN);
+            console.log("[WS] CHAT_LEN:", this.CHAT_LEN);
+
+            // Check type field BEFORE writing payload
+            const typeBeforePayload = Array.from(uint8.slice(0, 4))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join(" ");
+            console.log(
+                `[WS] Type field BEFORE payload write: ${typeBeforePayload}`
+            );
+
+            // ✅ GHI game_id tại offset 516
+            const gameIdBytes = new TextEncoder().encode(payload.game_id || "");
+            console.log(
+                `[WS] Writing game_id "${payload.game_id}" (${gameIdBytes.length} bytes) at offset ${this.OFFSET_PAYLOAD}`
+            );
             uint8.set(
-                chatBytes.slice(0, this.CHAT_LEN - 1),
+                gameIdBytes.slice(0, this.GAME_ID_LEN - 1),
                 this.OFFSET_PAYLOAD
             );
+            uint8[this.OFFSET_PAYLOAD + this.GAME_ID_LEN - 1] = 0;
+
+            // Check type field AFTER writing game_id
+            const typeAfterGameId = Array.from(uint8.slice(0, 4))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join(" ");
+            console.log(
+                `[WS] Type field AFTER game_id write: ${typeAfterGameId}`
+            );
+
+            // ✅ GHI message tại offset 516 + 64 = 580
+            const messageOffset = this.OFFSET_PAYLOAD + this.GAME_ID_LEN;
+            const messageBytes = new TextEncoder().encode(payload.message);
+            console.log(
+                `[WS] Writing message "${payload.message}" (${messageBytes.length} bytes) at offset ${messageOffset}`
+            );
+            uint8.set(messageBytes.slice(0, this.CHAT_LEN - 1), messageOffset);
+            uint8[messageOffset + this.CHAT_LEN - 1] = 0;
+
+            // Check type field AFTER writing message
+            const typeAfterMessage = Array.from(uint8.slice(0, 4))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join(" ");
+            console.log(
+                `[WS] Type field AFTER message write: ${typeAfterMessage}`
+            );
+
+            // Final verification
+            const finalTypeCheck = view.getUint32(this.OFFSET_TYPE, true);
+            console.log(
+                `[WS] Final type check: ${finalTypeCheck} (should be ${MSG_TYPES.CHAT})`
+            );
+
+            const sentGameId = new TextDecoder()
+                .decode(
+                    uint8.slice(this.OFFSET_PAYLOAD, this.OFFSET_PAYLOAD + 64)
+                )
+                .replace(/\0/g, "");
+            const sentMessage = new TextDecoder()
+                .decode(uint8.slice(messageOffset, messageOffset + 128))
+                .replace(/\0/g, "");
+            console.log(
+                `[WS] Verified CHAT: game_id="${sentGameId}", message="${sentMessage}"`
+            );
+            console.log("[WS] === CHAT SERIALIZATION END ===");
         } else if (type === MSG_TYPES.PLAYER_READY) {
             // ✅ Đảm bảo gửi đúng thứ tự: game_id (65 bytes) + board_state (100 bytes)
 
@@ -451,6 +516,15 @@ class WebSocketService {
                 game_id: payload.game_id,
                 opponent_length: payload.opponent.length,
                 game_id_length: payload.game_id.length,
+            });
+        } else if (type === MSG_TYPES.CHAT_MESSAGE) {
+            // ✅ Deserialize MSG_CHAT_MESSAGE: username (64 bytes) + text (128 bytes)
+            payload.username = decodeCString(this.OFFSET_PAYLOAD, 64);
+            payload.text = decodeCString(this.OFFSET_PAYLOAD + 64, 128);
+
+            console.log("[WS] CHAT_MESSAGE received:", {
+                username: payload.username,
+                text: payload.text,
             });
         } else if (type === MSG_TYPES.ONLINE_PLAYERS_LIST) {
             // ✅ Deserialize danh sách players
