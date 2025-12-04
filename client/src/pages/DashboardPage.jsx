@@ -8,6 +8,7 @@ import OnlinePlayers from "../components/game/OnlinePlayer";
 import MatchmakingPanel from "../components/game/MatchmakingPanel";
 import ActiveGames from "../components/game/ActiveGames";
 import LeaderboardPreview from "../components/game/LeaderboardPreview";
+import ChallengeModal from "@/components/game/ChallengeModal";
 
 export default function DashboardPage() {
   const [userName] = useState("Player One");
@@ -15,6 +16,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#0f1419]">
       <NavBar />
+      <ChallengeModal />
       <div className="p-6 max-w-7xl mx-auto">
         <DashboardHeader userName={userName} />
 

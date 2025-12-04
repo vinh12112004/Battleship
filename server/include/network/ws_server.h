@@ -7,4 +7,5 @@
 int setup_ws_server(uint16_t port);       // Khởi tạo server, trả socket
 void start_ws_server(uint16_t port);      // Bắt đầu vòng lặp accept client
 void client_register(int client_sock, const char *user_id);
+int get_socket_by_user_id(const char *user_id);
 #endif

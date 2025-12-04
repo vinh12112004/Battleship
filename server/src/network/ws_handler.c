@@ -9,6 +9,7 @@
 #include "auth/jwt.h"
 #include "game/game.h"
 #include "game/game_board.h"
+#include "matchmaking/challenge_manager.h"
 
 void handle_message(int client_sock, message_t *msg) {
     log_debug("Handling WebSocket message type=%d for client %d", msg->type, client_sock);
@@ -81,6 +82,24 @@ void handle_message(int client_sock, message_t *msg) {
         case MSG_GET_ONLINE_PLAYERS:
             handle_get_online_players(client_sock, msg->token);
             break;
+        case MSG_CHALLENGE_PLAYER:
+            handle_challenge_player(client_sock, &msg->payload.challenge, msg->token);
+            break;
+        
+        case MSG_CHALLENGE_ACCEPT:
+            handle_challenge_accept(client_sock, &msg->payload.challenge_resp, msg->token);
+            break;
+        
+        case MSG_CHALLENGE_DECLINE:
+            handle_challenge_decline(client_sock, &msg->payload.challenge_resp, msg->token);
+            break;
+        
+        case MSG_CHALLENGE_CANCEL:
+            handle_challenge_cancel(client_sock, &msg->payload.challenge_resp, msg->token);
+            break;
+        case MSG_AUTH_TOKEN:
+            handle_auth_token(client_sock, msg->token);
+            break;
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);
             break;
@@ -89,6 +108,54 @@ void handle_message(int client_sock, message_t *msg) {
     log_debug("Message handler finished for type=%d, client=%d", msg->type, client_sock);
 }
 
+void handle_auth_token(int client_sock, const char *token) {
+    log_info("[AUTH_TOKEN] Client %d re-authenticating with token", client_sock);
+    
+    // Verify token
+    char *user_id = jwt_verify(token);
+    if (!user_id) {
+        log_warn("[AUTH_TOKEN] Invalid token from client %d", client_sock);
+        
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
+        ws_send_message(client_sock, &resp);
+        return;
+    }
+    
+    // Get user info
+    user_t *user = user_find_by_id(user_id);
+    if (!user) {
+        log_error("[AUTH_TOKEN] User not found: %s", user_id);
+        free(user_id);
+        
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "User not found", 63);
+        ws_send_message(client_sock, &resp);
+        return;
+    }
+    
+    // Register client with new socket
+    client_register(client_sock, user_id);
+    
+    // Update status to online
+    user_update_status(user->username, "online");
+    
+    // Send success response
+    message_t resp = {0};
+    resp.type = MSG_AUTH_SUCCESS;
+    strncpy(resp.payload.auth_suc.token, token, MAX_JWT_LEN - 1);
+    strncpy(resp.payload.auth_suc.username, user->username, 31);
+    
+    ws_send_message(client_sock, &resp);
+    
+    log_info("[AUTH_TOKEN] ✅ User %s re-authenticated (socket %d)", 
+             user->username, client_sock);
+    
+    user_free(user);
+    free(user_id);
+}
 
 void handle_register(int client_sock, auth_payload *auth) {
     if (!auth || !auth->username[0] || !auth->password[0]) {
@@ -510,5 +577,250 @@ void handle_get_online_players(int client_sock, const char *token) {
     
     // Cleanup
     online_players_free(players);
+    free(user_id);
+}
+
+// ✅ Handle CHALLENGE_PLAYER
+void handle_challenge_player(int client_sock, challenge_payload *payload, const char *token) {
+    char *challenger_id = jwt_verify(token);
+    if (!challenger_id) {
+        log_error("Invalid token for challenge");
+        return;
+    }
+    
+    // Get challenger user info
+    user_t *challenger = user_find_by_id(challenger_id);
+    if (!challenger) {
+        log_error("Challenger user not found: %s", challenger_id);
+        free(challenger_id);
+        return;
+    }
+    
+    // Get target user info
+    user_t *target = NULL;
+    
+    // Try as ObjectId first
+    if (strlen(payload->target_id) == 24) {
+        target = user_find_by_id(payload->target_id);
+    }
+    
+    // If not found, try as username
+    if (!target) {
+        log_info("Trying target_id as username: %s", payload->target_id);
+        target = user_find_by_username(payload->target_id);
+    }
+    
+    if (!target) {
+        log_error("Target user not found: %s", payload->target_id);
+        // ... error handling ...
+        return;
+    }
+    
+    // Check if target is online
+    if (strcmp(target->status, "online") != 0) {
+        log_warn("Target user %s is not online", target->username);
+        
+        // Send error back to challenger
+        message_t error_msg = {0};
+        error_msg.type = MSG_AUTH_FAILED;
+        snprintf(error_msg.payload.auth_fail.reason, 63, 
+                 "%s is not online", target->username);
+        ws_send_message(client_sock, &error_msg);
+        
+        user_free(challenger);
+        user_free(target);
+        free(challenger_id);
+        return;
+    }
+    
+    // Find target socket
+    int target_sock = -1;
+    target_sock = get_socket_by_user_id(target->id);
+    
+    if (target_sock < 0) {
+        log_error("Cannot find socket for target user: %s", payload->target_id);
+        user_free(challenger);
+        user_free(target);
+        free(challenger_id);
+        return;
+    }
+    
+    // Create challenge
+    char *challenge_id = challenge_create(
+        challenger_id, 
+        target->id,
+        client_sock,
+        target_sock,
+        payload->game_mode,
+        payload->time_control
+    );
+    
+    if (!challenge_id) {
+        log_error("Failed to create challenge");
+        user_free(challenger);
+        user_free(target);
+        free(challenger_id);
+        return;
+    }
+    
+    // Send CHALLENGE_RECEIVED to target
+    message_t recv_msg = {0};
+    recv_msg.type = MSG_CHALLENGE_RECEIVED;
+    strncpy(recv_msg.payload.challenge_recv.challenger_username, 
+            challenger->username, 63);
+    strncpy(recv_msg.payload.challenge_recv.challenger_id, 
+            challenger_id, 63);
+    strncpy(recv_msg.payload.challenge_recv.challenge_id, 
+            challenge_id, 64);
+    strncpy(recv_msg.payload.challenge_recv.game_mode, 
+            payload->game_mode, 31);
+    recv_msg.payload.challenge_recv.time_control = payload->time_control;
+    
+    challenge_session_t *c = challenge_get(challenge_id);
+    recv_msg.payload.challenge_recv.expires_at = c->expires_at;
+    
+    ws_send_message(target_sock, &recv_msg);
+    
+    log_info("Challenge sent: %s → %s (ID: %s)", 
+             challenger->username, target->username, challenge_id);
+    
+    user_free(challenger);
+    user_free(target);
+    free(challenger_id);
+}
+
+// ✅ Handle CHALLENGE_ACCEPT
+void handle_challenge_accept(int client_sock, challenge_response_payload *payload, const char *token) {
+    char *user_id = jwt_verify(token);
+    if (!user_id) return;
+    
+    challenge_session_t *c = challenge_get(payload->challenge_id);
+    if (!c) {
+        log_error("Challenge not found: %s", payload->challenge_id);
+        free(user_id);
+        return;
+    }
+    
+    // Verify that user is the target
+    if (strcmp(c->target_id, user_id) != 0) {
+        log_error("User %s not authorized to accept challenge %s", 
+                  user_id, payload->challenge_id);
+        free(user_id);
+        return;
+    }
+    
+    // Accept challenge
+    if (!challenge_accept(payload->challenge_id)) {
+        log_error("Failed to accept challenge");
+        free(user_id);
+        return;
+    }
+    
+    // Create game
+    char game_id[65];
+    if (!game_create(c->challenger_id, c->target_id, game_id)) {
+        log_error("Failed to create game for challenge");
+        free(user_id);
+        return;
+    }
+    
+    // Assign sockets to game
+    game_session_t *game = game_get(game_id);
+    if (game) {
+        game->player1_socket = c->challenger_socket;
+        game->player2_socket = c->target_socket;
+    }
+    
+    // Get usernames
+    user_t *challenger = user_find_by_id(c->challenger_id);
+    user_t *target = user_find_by_id(c->target_id);
+    
+    // Send START_GAME to both players
+    message_t start_msg1 = {0};
+    start_msg1.type = MSG_START_GAME;
+    strncpy(start_msg1.payload.start_game.game_id, game_id, 63);
+    strncpy(start_msg1.payload.start_game.opponent, 
+            target ? target->username : c->target_id, 31);
+    ws_send_message(c->challenger_socket, &start_msg1);
+    
+    message_t start_msg2 = {0};
+    start_msg2.type = MSG_START_GAME;
+    strncpy(start_msg2.payload.start_game.game_id, game_id, 63);
+    strncpy(start_msg2.payload.start_game.opponent, 
+            challenger ? challenger->username : c->challenger_id, 31);
+    ws_send_message(c->target_socket, &start_msg2);
+    
+    log_info("Challenge accepted, game started: %s", game_id);
+    
+    // Cleanup
+    challenge_remove(payload->challenge_id);
+    
+    if (challenger) user_free(challenger);
+    if (target) user_free(target);
+    free(user_id);
+}
+
+// ✅ Handle CHALLENGE_DECLINE
+void handle_challenge_decline(int client_sock, challenge_response_payload *payload, const char *token) {
+    char *user_id = jwt_verify(token);
+    if (!user_id) return;
+    
+    challenge_session_t *c = challenge_get(payload->challenge_id);
+    if (!c) {
+        log_error("Challenge not found: %s", payload->challenge_id);
+        free(user_id);
+        return;
+    }
+    
+    if (strcmp(c->target_id, user_id) != 0) {
+        log_error("User %s not authorized to decline challenge", user_id);
+        free(user_id);
+        return;
+    }
+    
+    challenge_decline(payload->challenge_id);
+    
+    // Notify challenger
+    message_t decline_msg = {0};
+    decline_msg.type = MSG_CHALLENGE_DECLINED;
+    strncpy(decline_msg.payload.challenge_resp.challenge_id, 
+            payload->challenge_id, 64);
+    ws_send_message(c->challenger_socket, &decline_msg);
+    
+    log_info("Challenge declined: %s", payload->challenge_id);
+    
+    challenge_remove(payload->challenge_id);
+    free(user_id);
+}
+
+// ✅ Handle CHALLENGE_CANCEL
+void handle_challenge_cancel(int client_sock, challenge_response_payload *payload, const char *token) {
+    char *user_id = jwt_verify(token);
+    if (!user_id) return;
+    
+    challenge_session_t *c = challenge_get(payload->challenge_id);
+    if (!c) {
+        free(user_id);
+        return;
+    }
+    
+    if (strcmp(c->challenger_id, user_id) != 0) {
+        log_error("User %s not authorized to cancel challenge", user_id);
+        free(user_id);
+        return;
+    }
+    
+    challenge_cancel(payload->challenge_id);
+    
+    // Notify target
+    message_t cancel_msg = {0};
+    cancel_msg.type = MSG_CHALLENGE_CANCELLED;
+    strncpy(cancel_msg.payload.challenge_resp.challenge_id, 
+            payload->challenge_id, 64);
+    ws_send_message(c->target_socket, &cancel_msg);
+    
+    log_info("Challenge cancelled: %s", payload->challenge_id);
+    
+    challenge_remove(payload->challenge_id);
     free(user_id);
 }

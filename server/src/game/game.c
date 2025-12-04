@@ -827,7 +827,7 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
             // Game đã có trong memory → reload board từ DB
             log_info("Reloading board from DB for game: %s", game_id);
             
-            // ✅ Re-fetch document từ MongoDB
+            // ✅ Re-fetch document từ MongoDB - đồng bộ với ram
             bson_t *reload_query = bson_new();
             bson_oid_t reload_oid;
             bson_oid_init_from_string(&reload_oid, game_id);
