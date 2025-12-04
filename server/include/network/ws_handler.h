@@ -21,5 +21,8 @@ void handle_logout(int client_sock, message_t *msg);
 int check_token(int client_sock, const char *token, auth_user_t *out_user);
 void handle_player_ready(int client_sock, message_t *msg);
 void handle_get_online_players(int client_sock, const char *token);
-
+void handle_challenge_player(int client_sock, challenge_payload *payload, const char *token);
+void handle_challenge_accept(int client_sock, challenge_response_payload *payload, const char *token);
+void handle_challenge_decline(int client_sock, challenge_response_payload *payload, const char *token);
+void handle_challenge_cancel(int client_sock, challenge_response_payload *payload, const char *token);
 #endif

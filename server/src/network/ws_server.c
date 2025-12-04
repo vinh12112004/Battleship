@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include "matchmaking/challenge_manager.h"
 
 #define MAX_CLIENTS 100
 
@@ -27,19 +28,107 @@ static pthread_mutex_t g_clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 // ✅ Register client khi login thành công
 void client_register(int client_sock, const char *user_id) {
     pthread_mutex_lock(&g_clients_mutex);
-    
+
+    // ✅ Step 1: Check if user already registered (including disconnected with socket=-1)
     for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (g_clients[i].socket == 0) {
+        if (g_clients[i].authenticated && 
+            strcmp(g_clients[i].user_id, user_id) == 0) {
+            
+            int old_socket = g_clients[i].socket;
+            
+            if (old_socket == -1) {
+                // User was disconnected, now reconnecting
+                log_info("✅ [CLIENT_REGISTER] User %s reconnected (new socket=%d)", 
+                         user_id, client_sock);
+            } else if (old_socket != client_sock) {
+                // User logging in from different socket
+                log_warn("🔄 [CLIENT_REGISTER] User %s already registered (old socket=%d → new socket=%d)", 
+                         user_id, old_socket, client_sock);
+                
+                // Close old socket if still open
+                if (old_socket > 0) {
+                    log_info("   Closing old socket %d", old_socket);
+                    close(old_socket);
+                }
+            } else {
+                // Same socket, same user (redundant call)
+                log_info("✅ [CLIENT_REGISTER] User %s already at socket %d", 
+                         user_id, client_sock);
+            }
+            
+            // Update to new socket
+            g_clients[i].socket = client_sock;
+            
+            // Update user status to online
+            user_update_status(user_id, "online");
+            
+            pthread_mutex_unlock(&g_clients_mutex);
+            return;
+        }
+    }
+    
+    // ✅ Step 2: User not found → Register new entry
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_clients[i].socket == 0 || g_clients[i].socket == -1) {
             g_clients[i].socket = client_sock;
             strncpy(g_clients[i].user_id, user_id, 63);
             g_clients[i].user_id[63] = '\0';
             g_clients[i].authenticated = true;
-            log_info("[CLIENT] Registered: socket=%d, user_id=%s", client_sock, user_id);
-            break;
+            
+            log_info("✅ [CLIENT_REGISTER] New registration at slot %d: socket=%d, user_id=%s", 
+                     i, client_sock, user_id);
+            
+            // Set user status to online
+            user_update_status(user_id, "online");
+            
+            pthread_mutex_unlock(&g_clients_mutex);
+            return;
+        }
+    }
+    
+    //Step 3: Registry full
+    log_error("❌ [CLIENT_REGISTER] Registry FULL! Cannot register user_id=%s", 
+              user_id);
+    
+    pthread_mutex_unlock(&g_clients_mutex);
+}
+
+int get_socket_by_user_id(const char *user_id) {
+    if (!user_id) {
+        log_error("get_socket_by_user_id: user_id is NULL");
+        return -1;
+    }
+    
+    pthread_mutex_lock(&g_clients_mutex);
+    
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_clients[i].authenticated && 
+            g_clients[i].socket > 0 &&
+            strcmp(g_clients[i].user_id, user_id) == 0) {
+            
+            int socket = g_clients[i].socket;
+            pthread_mutex_unlock(&g_clients_mutex);
+            
+            log_debug("Found socket %d for user_id: %s", socket, user_id);
+            return socket;
         }
     }
     
     pthread_mutex_unlock(&g_clients_mutex);
+    log_warn("Socket not found for user_id: %s", user_id);
+    return -1;
+}
+
+void* challenge_expiration_thread(void* arg) {
+    log_info("Challenge expiration thread started");
+    
+    while (1) {
+        sleep(5);  // Check every 5 seconds
+        // Check for expired challenges
+        challenge_check_expired();
+    }
+    
+    return NULL;
 }
 
 // Cleanup khi disconnect
@@ -54,15 +143,20 @@ static void client_cleanup(int client_sock) {
                 
                 // Xóa khỏi matchmaking queue
                 matcher_remove_from_queue(g_clients[i].user_id);
-                
-                // TODO: Update user status to offline in DB
-                // user_update_status(g_clients[i].user_id, "offline");
+                g_clients[i].socket = -1;
+                char user_id[64];
+                strncpy(user_id, g_clients[i].user_id, 63);
+                user_id[63] = '\0';
+                if (user_id[0] != '\0') {
+                user_update_status(user_id, "offline");
+                log_info("✅ User %s marked offline in database", user_id);
             }
-            
-            // Clear client info
-            g_clients[i].socket = 0;
-            g_clients[i].user_id[0] = '\0';
-            g_clients[i].authenticated = false;
+            } else {
+                // User chưa authenticated → xóa luôn
+                g_clients[i].socket = 0;
+                g_clients[i].user_id[0] = '\0';
+                g_clients[i].authenticated = false;
+            }
             break;
         }
     }
@@ -171,6 +265,16 @@ void start_ws_server(uint16_t port) {
 
     log_info("WebSocket server ready to accept connections");
     memset(g_clients, 0, sizeof(g_clients));
+    challenge_manager_init();
+    pthread_t expiration_tid;
+    int result = pthread_create(&expiration_tid, NULL, challenge_expiration_thread, NULL);
+    if (result == 0) {
+        pthread_detach(expiration_tid);
+        log_info("Challenge expiration thread created");
+    } else {
+        log_error("Failed to create expiration thread: %d", result);
+    }
+
     while (1) {
         struct sockaddr_in client_addr;
         socklen_t addr_len = sizeof(client_addr);
@@ -198,6 +302,7 @@ void start_ws_server(uint16_t port) {
         }
     }
 
+    challenge_manager_cleanup();
     close(server_sock);
     log_info("WebSocket server shutdown");
 }
