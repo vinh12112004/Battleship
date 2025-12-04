@@ -483,3 +483,56 @@ void online_players_free(online_players_t *players) {
     
     free(players);
 }
+
+bool user_update_elo(const char *user_id, int new_elo) {
+    if (!user_id) return false;
+    
+    // Kiểm tra format ObjectId
+    if (strlen(user_id) != 24) {
+        log_error("Invalid ObjectId format: %s", user_id);
+        return false;
+    }
+
+    mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
+    if (!client) return false;
+
+    mongoc_collection_t *collection = mongo_get_collection(client, COLLECTION_USERS);
+    if (!collection) {
+        mongo_release_client(g_mongo_ctx, client);
+        return false;
+    }
+
+    // Tạo query
+    bson_t *query = bson_new();
+    bson_oid_t oid;
+    bson_oid_init_from_string(&oid, user_id);
+    BSON_APPEND_OID(query, "_id", &oid);
+
+    // Tạo update document
+    bson_t *update = bson_new();
+    bson_t child;
+
+    BSON_APPEND_DOCUMENT_BEGIN(update, "$set", &child);
+    BSON_APPEND_INT32(&child, "elo_rating", new_elo);
+    bson_append_date_time(&child, "updated_at", -1, (int64_t)time(NULL) * 1000);
+    bson_append_document_end(update, &child);
+
+    // Execute update
+    bson_error_t error;
+    bool success = mongoc_collection_update_one(
+        collection, query, update, NULL, NULL, &error
+    );
+
+    if (!success) {
+        log_error("Failed to update user ELO (%s -> %d): %s", user_id, new_elo, error.message);
+    } else {
+        log_info("User %s ELO updated to %d", user_id, new_elo);
+    }
+
+    bson_destroy(query);
+    bson_destroy(update);
+    mongoc_collection_destroy(collection);
+    mongo_release_client(g_mongo_ctx, client);
+
+    return success;
+}
