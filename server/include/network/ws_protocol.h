@@ -46,8 +46,40 @@ typedef enum {
     MSG_PLAYER_READY,
     MSG_GET_ONLINE_PLAYERS = 17,
     MSG_ONLINE_PLAYERS_LIST = 18,
-    MSG_CHAT_MESSAGE = 19
+    MSG_CHALLENGE_PLAYER = 19,        // A → Server: Challenge B
+    MSG_CHALLENGE_RECEIVED = 20,      // Server → B: You got challenged
+    MSG_CHALLENGE_ACCEPT = 21,        // B → Server: Accept challenge
+    MSG_CHALLENGE_DECLINE = 22,       // B → Server: Decline challenge
+    MSG_CHALLENGE_DECLINED = 23,      // Server → A: B declined
+    MSG_CHALLENGE_EXPIRED = 24,       // Server → A/B: Challenge expired
+    MSG_CHALLENGE_CANCEL = 25,        // A → Server: Cancel challenge
+    MSG_CHALLENGE_CANCELLED = 26,      // Server → B: A cancelled
+    MSG_AUTH_TOKEN = 27,
+    MSG_TURN_WARNING = 28,
+    MSG_GAME_TIMEOUT = 29,
+    MSG_CHAT_MESSAGE = 30,
 } msg_type;
+
+typedef struct __attribute__((packed)) {
+    char challenger_id[64];
+    char target_id[64];
+    char challenge_id[65];
+    char game_mode[32];
+    int time_control;
+} challenge_payload;
+
+typedef struct __attribute__((packed)) {
+    char challenger_username[64];
+    char challenger_id[64];
+    char challenge_id[65];
+    char game_mode[32];
+    int time_control;
+    int64_t expires_at;
+} challenge_received_payload;
+
+typedef struct {
+    char challenge_id[65];
+} challenge_response_payload;
 
 typedef struct {
     int ship_type;      // 5=Carrier, 4=Battleship, 3=Cruiser/Sub, 2=Destroyer
@@ -90,8 +122,18 @@ typedef struct {
     char ranks[50][32];
 } online_players_payload;
 
-// Message structure
 typedef struct {
+    int seconds_remaining;
+} turn_warning_payload;
+
+typedef struct {
+    char winner_id[64];
+    char loser_id[64];
+    char reason[64];  // "timeout", "disconnect", etc.
+} game_timeout_payload;
+
+// Message structure
+typedef struct __attribute__((packed)) {
     msg_type type;
     char token[MAX_JWT_LEN];
     union {
@@ -106,6 +148,11 @@ typedef struct {
         place_ship_payload place_ship;
         ready_payload ready;
         online_players_payload online_players;
+        challenge_payload challenge;
+        challenge_received_payload challenge_recv;
+        challenge_response_payload challenge_resp;
+        turn_warning_payload turn_warning;
+        game_timeout_payload game_timeout;
     } payload;
 } message_t;
 

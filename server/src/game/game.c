@@ -556,6 +556,8 @@ void game_switch_turn(game_session_t *game) {
     } else {
         strncpy(game->current_turn, game->player1_id, 63);
     }
+    game->turn_started_at = time(NULL);
+    game->turn_timeout_warned = false;
     log_info("Turn switched to: %s", game->current_turn);
 }
 
@@ -670,6 +672,156 @@ void game_free(game_session_t *game) {
     }
 
     if (game) free(game);
+}
+
+void* game_timeout_monitor_thread(void* arg) {
+    log_info("[TIMEOUT_MONITOR] Thread started");
+    
+    while (1) {
+        sleep(1);
+        time_t now = time(NULL);
+        
+        // ✅ Create snapshot
+        int snapshot_count = active_game_count;
+        game_session_t *snapshot[MAX_ACTIVE_GAMES];
+        
+        for (int i = 0; i < snapshot_count; i++) {
+            snapshot[i] = active_games[i];
+        }
+        
+        // ✅ Process snapshot
+        for (int i = 0; i < snapshot_count; i++) {
+            game_session_t *game = snapshot[i];
+            
+            if (!game || game->state != GAME_STATE_PLAYING) {
+                continue;
+            }
+            
+            int elapsed = (int)(now - game->turn_started_at);
+            int remaining = game->turn_timeout_seconds - elapsed;
+            
+            // ✅ CASE 1: Send warning (ONLY to current player)
+            if (remaining <= 10 && remaining > 0 && !game->turn_timeout_warned) {
+                log_warn("[TIMEOUT_MONITOR] Game %s: %d seconds remaining for %s", 
+                         game->game_id, remaining, game->current_turn);
+                
+                int current_socket = -1;
+                
+                // ✅ Compare current_turn (USER_ID) with player IDs
+                if (strcmp(game->current_turn, game->player1_id) == 0) {
+                    current_socket = game->player1_socket;
+                    log_info("[TIMEOUT_MONITOR] Warning → Player1 (socket %d)", current_socket);
+                } else if (strcmp(game->current_turn, game->player2_id) == 0) {
+                    current_socket = game->player2_socket;
+                    log_info("[TIMEOUT_MONITOR] Warning → Player2 (socket %d)", current_socket);
+                } else {
+                    log_error("[TIMEOUT_MONITOR] ❌ current_turn mismatch: '%s'", game->current_turn);
+                }
+                
+                if (current_socket > 0) {
+                    message_t warning = {0};
+                    warning.type = MSG_TURN_WARNING;
+                    warning.payload.turn_warning.seconds_remaining = remaining;
+                    
+                    ws_send_message(current_socket, &warning);
+                    log_info("[TIMEOUT_MONITOR] ✅ Sent TURN_WARNING: %d seconds remaining", remaining);
+                    
+                    game->turn_timeout_warned = true;
+                } else {
+                    log_error("[TIMEOUT_MONITOR] ❌ Invalid socket!");
+                }
+            }
+            
+            // ✅ CASE 2: Timeout expired
+            if (elapsed > game->turn_timeout_seconds) {
+                log_error("[TIMEOUT_MONITOR] ⏰ TIMEOUT! Game %s", game->game_id);
+                
+                // ... (keep existing timeout logic)
+                char winner_username[64] = {0};
+                char loser_username[64] = {0};
+                int winner_socket = -1;
+                int loser_socket = -1;
+                
+                if (strcmp(game->current_turn, game->player1_id) == 0) {
+                    // Player 1 timeout → Player 2 wins
+                    user_t *winner_user = user_find_by_id(game->player2_id);
+                    user_t *loser_user = user_find_by_id(game->player1_id);
+                    
+                    if (winner_user) {
+                        strncpy(winner_username, winner_user->username, 63);
+                        user_free(winner_user);
+                    }
+                    
+                    if (loser_user) {
+                        strncpy(loser_username, loser_user->username, 63);
+                        user_free(loser_user);
+                    }
+                    
+                    winner_socket = game->player2_socket;
+                    loser_socket = game->player1_socket;
+                } else {
+                    // Player 2 timeout → Player 1 wins
+                    user_t *winner_user = user_find_by_id(game->player1_id);
+                    user_t *loser_user = user_find_by_id(game->player2_id);
+                    
+                    if (winner_user) {
+                        strncpy(winner_username, winner_user->username, 63);
+                        user_free(winner_user);
+                    }
+                    
+                    if (loser_user) {
+                        strncpy(loser_username, loser_user->username, 63);
+                        user_free(loser_user);
+                    }
+                    
+                    winner_socket = game->player1_socket;
+                    loser_socket = game->player2_socket;
+                }
+                
+                game->state = GAME_STATE_FINISHED;
+                strncpy(game->winner_id, winner_username, 63);
+                game_end(game->game_id, winner_username);
+                
+                message_t timeout_msg = {0};
+                timeout_msg.type = MSG_GAME_TIMEOUT;
+                strncpy(timeout_msg.payload.game_timeout.winner_id, winner_username, 63);
+                strncpy(timeout_msg.payload.game_timeout.loser_id, loser_username, 63);
+                strncpy(timeout_msg.payload.game_timeout.reason, "timeout", 63);
+                
+                if (winner_socket > 0) {
+                    ws_send_message(winner_socket, &timeout_msg);
+                    log_info("[TIMEOUT_MONITOR] ✅ Sent GAME_TIMEOUT to winner %s", winner_username);
+                }
+                
+                if (loser_socket > 0) {
+                    ws_send_message(loser_socket, &timeout_msg);
+                    log_info("[TIMEOUT_MONITOR] ✅ Sent GAME_TIMEOUT to loser %s", loser_username);
+                }
+                game_end(game->game_id, winner_username);
+    
+                game->player1_socket = 0;
+                game->player2_socket = 0;
+                
+                log_info("[TIMEOUT_MONITOR] ✅ Game %s ended. Winner: %s", 
+                         game->game_id, winner_username);
+            }
+        }
+    }
+    
+    return NULL;
+}
+
+// Khởi tạo timeout monitor thread
+void game_init_timeout_monitor() {
+    pthread_t tid;
+    int result = pthread_create(&tid, NULL, game_timeout_monitor_thread, NULL);
+    
+    if (result == 0) {
+        pthread_detach(tid);
+        log_info("[TIMEOUT_MONITOR] ✅ Thread initialized successfully");
+    } else {
+        log_error("[TIMEOUT_MONITOR] ❌ Failed to create thread: %d", result);
+    }
 }
 
 // Thêm vào game.c
@@ -827,7 +979,7 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
             // Game đã có trong memory → reload board từ DB
             log_info("Reloading board from DB for game: %s", game_id);
             
-            // ✅ Re-fetch document từ MongoDB
+            // ✅ Re-fetch document từ MongoDB - đồng bộ với ram
             bson_t *reload_query = bson_new();
             bson_oid_t reload_oid;
             bson_oid_init_from_string(&reload_oid, game_id);
@@ -1034,7 +1186,9 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
             game->state = GAME_STATE_PLAYING;
             log_info("Game %s started! Both players ready.", game_id);
             log_info("In-memory game state updated to PLAYING");
-            
+            game->turn_timeout_seconds = 30;  // 30 giây mỗi turn
+            game->turn_started_at = time(NULL);
+            game->turn_timeout_warned = false;
             // ✅ DEBUG: Log board state
             if (is_p1) {
                 log_info("Player1 board: ship_count=%d, ships_remaining=%d",
