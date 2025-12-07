@@ -2,6 +2,7 @@
 #include "network/ws_server.h"
 #include "auth/auth.h"
 #include "game/game.h"
+#include "game/game_chat.h"
 #include "matchmaking/matcher.h"
 #include "utils/logger.h"
 #include <stdio.h>
@@ -50,7 +51,7 @@ void handle_message(int client_sock, message_t *msg) {
             handle_player_move(client_sock, msg);
             break;
         case MSG_CHAT:
-            handle_chat(client_sock, &msg->payload.chat);
+            handle_chat(client_sock, &msg->payload.chat, msg->token);
             break;
         case MSG_LOGOUT:
             handle_logout(client_sock, msg);
@@ -261,9 +262,34 @@ void handle_player_move(int client_sock, message_t *msg) {
     free(user_id);
 }
 
-void handle_chat(int client_sock, chat_payload *chat) {
-    log_info("Chat message from client %d: %s", client_sock, chat->message);
-    // Send message to opponent
+void handle_chat(int client_sock, chat_payload *chat, const char *token) {
+    // Verify token
+    char *user_id = jwt_verify(token);
+    if (!user_id) {
+        log_warn("Invalid token for chat message");
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
+        ws_send_message(client_sock, &resp);
+        return;
+    }
+    
+    log_info("Chat message from user %s (socket %d): %s", 
+             user_id, client_sock, chat->message);
+    
+    // Delegate to game_chat module
+    bool success = game_chat_send_message(
+        chat->game_id,
+        user_id,
+        chat->message
+    );
+    
+    if (!success) {
+        log_error("Failed to send chat message for user %s in game %s", 
+                  user_id, chat->game_id);
+    }
+    
+    free(user_id);
 }
 
 int check_token(int client_sock, const char *token, auth_user_t *out_user) {
