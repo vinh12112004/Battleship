@@ -3,6 +3,7 @@
 #include "network/ws_handler.h"
 #include "utils/logger.h"
 #include "matchmaking/matcher.h"
+#include "game/game.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -274,7 +275,7 @@ void start_ws_server(uint16_t port) {
     } else {
         log_error("Failed to create expiration thread: %d", result);
     }
-
+    game_init_timeout_monitor();
     while (1) {
         struct sockaddr_in client_addr;
         socklen_t addr_len = sizeof(client_addr);

@@ -3,7 +3,9 @@
 
 #include <stdbool.h>
 #include "game_board.h"
-#include <stdint.h> 
+#include <stdint.h>
+#include <time.h>
+#include <pthread.h> 
 
 // Cấu trúc mô tả tọa độ (cho shots)
 typedef struct {
@@ -59,6 +61,10 @@ typedef struct {
     
     bool player1_ready;  // Ships placed?
     bool player2_ready;
+
+    time_t turn_started_at;        // Timestamp khi turn bắt đầu
+    int turn_timeout_seconds;      // 30 seconds
+    bool turn_timeout_warned;      // warning
 } game_session_t;
 
 bool game_is_player_turn(const char *game_id, const char *player_id);
@@ -78,5 +84,6 @@ void game_free(game_session_t *game);
 
 // HÀM READY: Cập nhật board của người chơi bằng mảng 1D
 bool game_set_player_ready(const char *game_id, const char *player_id, const uint8_t board[BOARD_SIZE]);
-
+void* game_timeout_monitor_thread(void* arg);
+void game_init_timeout_monitor();
 #endif // GAME_H

@@ -27,6 +27,8 @@ const MSG_TYPES = {
   CHALLENGE_CANCEL: 25,
   CHALLENGE_CANCELLED: 26,
   AUTH_TOKEN: 27,
+  TURN_WARNING: 28,
+  GAME_TIMEOUT: 29,
 };
 
 class WebSocketService {
@@ -583,8 +585,23 @@ class WebSocketService {
           challenge_id,
         },
       };
-    }
+    } else if (type === MSG_TYPES.TURN_WARNING) {
+      // ✅ turn_warning_payload struct (offset 516):
+      //    int seconds_remaining (4 bytes)
+      payload.seconds_remaining = view.getInt32(this.OFFSET_PAYLOAD, true);
 
+      console.log("[WS] TURN_WARNING deserialized:", payload);
+    } else if (type === MSG_TYPES.GAME_TIMEOUT) {
+      // ✅ game_timeout_payload struct (offset 516):
+      //    char winner_id[64]     (offset 516)
+      //    char loser_id[64]      (offset 580)
+      //    char reason[64]        (offset 644)
+      payload.winner_id = decodeCString(this.OFFSET_PAYLOAD, 64);
+      payload.loser_id = decodeCString(this.OFFSET_PAYLOAD + 64, 64);
+      payload.reason = decodeCString(this.OFFSET_PAYLOAD + 128, 64);
+
+      console.log("[WS] GAME_TIMEOUT deserialized:", payload);
+    }
     // Thêm các loại tin nhắn khác ở đây
 
     return { type, payload };

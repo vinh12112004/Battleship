@@ -25,4 +25,5 @@ void handle_challenge_player(int client_sock, challenge_payload *payload, const 
 void handle_challenge_accept(int client_sock, challenge_response_payload *payload, const char *token);
 void handle_challenge_decline(int client_sock, challenge_response_payload *payload, const char *token);
 void handle_challenge_cancel(int client_sock, challenge_response_payload *payload, const char *token);
+void handle_auth_token(int client_sock, const char *token);
 #endif

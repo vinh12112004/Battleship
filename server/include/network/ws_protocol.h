@@ -55,6 +55,8 @@ typedef enum {
     MSG_CHALLENGE_CANCEL = 25,        // A → Server: Cancel challenge
     MSG_CHALLENGE_CANCELLED = 26,      // Server → B: A cancelled
     MSG_AUTH_TOKEN = 27,
+    MSG_TURN_WARNING = 28,
+    MSG_GAME_TIMEOUT = 29,
 } msg_type;
 
 typedef struct __attribute__((packed)) {
@@ -117,6 +119,17 @@ typedef struct {
     int elo_ratings[50];
     char ranks[50][32];
 } online_players_payload;
+
+typedef struct {
+    int seconds_remaining;
+} turn_warning_payload;
+
+typedef struct {
+    char winner_id[64];
+    char loser_id[64];
+    char reason[64];  // "timeout", "disconnect", etc.
+} game_timeout_payload;
+
 // Message structure
 typedef struct __attribute__((packed)) {
     msg_type type;
@@ -135,6 +148,8 @@ typedef struct __attribute__((packed)) {
         challenge_payload challenge;
         challenge_received_payload challenge_recv;
         challenge_response_payload challenge_resp;
+        turn_warning_payload turn_warning;
+        game_timeout_payload game_timeout;
     } payload;
 } message_t;
 
