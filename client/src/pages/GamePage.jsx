@@ -10,7 +10,6 @@ import { useGame } from "@/hooks/useGame";
 import BattleshipSeaBackground from "../components/game/BattleshipSeaBackground.jsx";
 import ShipDock from "../components/game/ShipDock.jsx";
 import { wsService, MSG_TYPES } from "@/services/wsService";
-import { authService } from "@/services/authService";
 import { toast } from "react-toastify";
 
 const SHIP_DEFINITIONS = [
