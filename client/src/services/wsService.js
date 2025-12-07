@@ -1,5 +1,6 @@
 // Message type constants
 const MSG_TYPES = {
+<<<<<<< HEAD
   REGISTER: 1,
   LOGIN: 2,
   AUTH_SUCCESS: 3,
@@ -29,6 +30,27 @@ const MSG_TYPES = {
   AUTH_TOKEN: 27,
   TURN_WARNING: 28,
   GAME_TIMEOUT: 29,
+=======
+    REGISTER: 1,
+    LOGIN: 2,
+    AUTH_SUCCESS: 3,
+    AUTH_FAILED: 4,
+    JOIN_QUEUE: 5,
+    LEAVE_QUEUE: 6,
+    START_GAME: 7,
+    PLAYER_MOVE: 8,
+    MOVE_RESULT: 9,
+    GAME_OVER: 10,
+    CHAT: 11,
+    LOGOUT: 12,
+    PING: 13,
+    PONG: 14,
+    PLACE_SHIP: 15,
+    PLAYER_READY: 16,
+    GET_ONLINE_PLAYERS: 17,
+    ONLINE_PLAYERS_LIST: 18,
+    CHAT_MESSAGE: 19,
+>>>>>>> 46f3a895e1dab7c7a2a818917352d43e37e174d1
 };
 
 class WebSocketService {
@@ -116,10 +138,267 @@ class WebSocketService {
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
+<<<<<<< HEAD
         console.log(`[WS] ✅ Connected to ${url}`);
         this.notifyConnectionState("connected");
         this.startPing(); // gửi ping mỗi 30s
         const token = localStorage.getItem("auth_token");
+=======
+        this.maxReconnectAttempts = 5;
+        this.reconnectDelay = 2000; // 2 seconds
+        this.isManualDisconnect = false;
+        this.connectionStateCallbacks = [];
+        this.autoReconnectEnabled = true;
+        this.isLoggedOut = false;
+        this.logoutTimeout = null;
+        // Định nghĩa cấu trúc từ C struct
+        this.MAX_JWT_LEN = 512;
+        this.USERNAME_LEN = 32;
+        this.PASSWORD_LEN = 32;
+        this.REASON_LEN = 64;
+        this.CHAT_LEN = 128;
+        this.GAME_ID_LEN = 64;
+        this.START_GAME_PAYLOAD_LEN = 32;
+
+        const PLACE_SHIP_SIZE = 16; // ship_type(4) + row(4) + col(4) + is_horizontal(1) + padding(3)
+        const MOVE_SIZE = 73; // ✅ CORRECT: game_id(65) + row(4) + col(4) = 73 bytes (packed)
+        const MOVE_RESULT_SIZE = 16; // ✅ row(4) + col(4) + is_hit(1) + is_sunk(1) + sunk_ship_type(4) + game_over(1) + padding(1)
+        const START_GAME_SIZE = 128; // opponent[32] + game_id[64] + current_turn[32]
+        const READY_SIZE = 165; // game_id[65] + board_state[100]
+        const AUTH_SUCCESS_SIZE = this.MAX_JWT_LEN + this.USERNAME_LEN; // 512 + 32 = 544
+
+        // Thành phần lớn nhất là online_players_payload:
+        // count(4) + players(50*64) + elo(50*4) + ranks(50*32) = 4 + 3200 + 200 + 1600 = 5004
+        this.MAX_PAYLOAD_SIZE = 5004;
+
+        // Kích thước cố định của toàn bộ message_t
+        this.MESSAGE_T_SIZE = 4 + this.MAX_JWT_LEN + this.MAX_PAYLOAD_SIZE; // 4 + 512 + 544 = 1060 bytes
+
+        // Vị trí (Offsets) của các trường trong message_t
+        this.OFFSET_TYPE = 0;
+        this.OFFSET_TOKEN = 4;
+        this.OFFSET_PAYLOAD = 4 + this.MAX_JWT_LEN; // 516
+
+        WebSocketService.instance = this;
+    }
+
+    connect(url = "ws://localhost:9090") {
+        this.url = url;
+
+        // Nếu đã connected, trả về Promise resolved
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            console.log("[WS] Already connected");
+            return Promise.resolve();
+        }
+
+        // Nếu đang connecting, đợi connection hiện tại
+        if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+            console.log("[WS] Already connecting, waiting...");
+            return this.waitForConnection();
+        }
+
+        this.isManualDisconnect = false;
+        this.isLoggedOut = false;
+
+        if (this.logoutTimeout) {
+            clearTimeout(this.logoutTimeout);
+            this.logoutTimeout = null;
+        }
+
+        return new Promise((resolve, reject) => {
+            // Đóng kết nối cũ chỉ khi nó đang CLOSING (không đóng OPEN hoặc CONNECTING)
+            if (this.ws && this.ws.readyState === WebSocket.CLOSING) {
+                console.log("[WS] Closing old connection...");
+                this.ws.close();
+            }
+
+            console.log(`[WS] Creating new connection to ${url}...`);
+            this.ws = new WebSocket(url);
+            this.ws.binaryType = "arraybuffer";
+
+            this.connectResolve = resolve;
+            this.connectReject = reject;
+
+            this.ws.onopen = () => {
+                this.reconnectAttempts = 0;
+                console.log(`[WS] ✅ Connected to ${url}`);
+                this.notifyConnectionState("connected");
+                this.startPing(); // gửi ping mỗi 30s
+                resolve();
+            };
+
+            this.ws.onerror = (error) => {
+                console.error("[WS] ❌ Connection error:", error);
+                this.notifyConnectionState("error");
+                reject(error);
+            };
+
+            this.ws.onmessage = (event) => {
+                this.handleMessage(event.data);
+            };
+
+            this.ws.onclose = (event) => {
+                console.log(
+                    `[WS] 🔌 Disconnected (code: ${event.code}, reason: ${event.reason})`
+                );
+                this.stopPing(); // dừng khi disconnect
+                if (!this.isLoggedOut) {
+                    this.notifyConnectionState("disconnected");
+                }
+
+                // Auto-reconnect nếu không phải manual disconnect
+                if (
+                    !this.isManualDisconnect &&
+                    this.autoReconnectEnabled &&
+                    this.reconnectAttempts < this.maxReconnectAttempts
+                ) {
+                    this.reconnectAttempts++;
+                    console.log(
+                        `[WS] 🔄 Reconnecting... (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
+                    );
+                    this.notifyConnectionState("reconnecting");
+
+                    setTimeout(() => {
+                        this.connect(this.url).catch((err) => {
+                            console.error("[WS] Reconnect failed:", err);
+                        });
+                    }, this.reconnectDelay);
+                } else if (
+                    this.reconnectAttempts >= this.maxReconnectAttempts
+                ) {
+                    console.error(
+                        "[WS] ❌ Max reconnect attempts reached. Giving up."
+                    );
+                    this.notifyConnectionState("failed");
+                }
+            };
+        });
+    }
+
+    /**
+     * Đăng ký callback để theo dõi trạng thái kết nối
+     * States: 'connecting', 'connected', 'disconnected', 'reconnecting', 'error', 'failed'
+     */
+    onConnectionStateChange(callback) {
+        this.connectionStateCallbacks.push(callback);
+    }
+
+    notifyConnectionState(state) {
+        this.connectionStateCallbacks.forEach((cb) => cb(state));
+    }
+
+    enableAutoReconnect(enabled = true) {
+        this.autoReconnectEnabled = enabled;
+    }
+
+    startPing() {
+        this.stopPing(); // Clear existing interval
+
+        this.pingInterval = setInterval(() => {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                console.log("[WS] Sending ping...");
+
+                // Gửi MSG_PING để keep-alive
+                const buffer = new ArrayBuffer(this.MESSAGE_T_SIZE);
+                const view = new DataView(buffer);
+                view.setUint32(0, MSG_TYPES.PING, true); // ✅ Dùng constant
+
+                this.ws.send(buffer);
+            }
+        }, 30000); // 30 seconds
+    }
+
+    stopPing() {
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
+    }
+
+    disconnect() {
+        this.stopPing();
+        this.isManualDisconnect = true;
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
+        }
+        if (!this.isLoggedOut) {
+            this.notifyConnectionState("disconnected");
+        }
+        console.log("[WS] Manual disconnect");
+    }
+
+    logout() {
+        this.stopPing();
+        console.log("[WS] logout() called");
+
+        // ✅ 1. Set flag NGAY LẬP TỨC
+        this.isLoggedOut = true;
+        this.isManualDisconnect = true;
+
+        // ✅ 2. Notify logged_out state TRƯỚC khi đóng socket
+        this.notifyConnectionState("logged_out");
+
+        // ✅ 3. Delay một chút để state được xử lý
+        this.logoutTimeout = setTimeout(() => {
+            console.log("[WS] Closing socket after logout delay");
+
+            if (this.ws) {
+                this.ws.close(1000, "User logout"); // Normal closure
+                this.ws = null;
+            }
+
+            this.logoutTimeout = null;
+        }, 100); // 100ms delay
+
+        console.log("[WS] logout() finished, socket will close in 100ms");
+    }
+
+    /**
+     * Kiểm tra trạng thái kết nối
+     */
+    isConnected() {
+        return this.ws && this.ws.readyState === WebSocket.OPEN;
+    }
+
+    /**
+     * Đợi kết nối sẵn sàng (dùng trong trường hợp reconnecting)
+     */
+    waitForConnection(timeout = 5000) {
+        return new Promise((resolve, reject) => {
+            if (this.isConnected()) {
+                resolve();
+                return;
+            }
+
+            const startTime = Date.now();
+            const checkInterval = setInterval(() => {
+                if (this.isConnected()) {
+                    clearInterval(checkInterval);
+                    resolve();
+                } else if (Date.now() - startTime > timeout) {
+                    clearInterval(checkInterval);
+                    reject(new Error("Connection timeout"));
+                }
+            }, 100);
+        });
+    }
+
+    /**
+     * Đóng gói (Serialize) tin nhắn ĐÚNG theo C struct message_t (kích thước cố định 1060 bytes)
+     */
+    serializeMessage(type, payload, token = "") {
+        const buffer = new ArrayBuffer(this.MESSAGE_T_SIZE);
+        const view = new DataView(buffer);
+        const uint8 = new Uint8Array(buffer);
+
+        // 1. Ghi Type (4 bytes)
+        // Giả định server C chạy trên x86 (Little-Endian) vì server C không chuyển đổi 'type'
+        view.setUint32(this.OFFSET_TYPE, type, true); // true = Little-Endian
+
+        // 2. Ghi Token cấp cao nhất (512 bytes)
+        // (Chỉ cần thiết cho các tin nhắn yêu cầu xác thực)
+>>>>>>> 46f3a895e1dab7c7a2a818917352d43e37e174d1
         if (token) {
           console.log("[WS] Auto-authenticating with existing token...");
 
@@ -164,10 +443,129 @@ class WebSocketService {
             this.connect(this.url).catch((err) => {
               console.error("[WS] Reconnect failed:", err);
             });
+<<<<<<< HEAD
           }, this.reconnectDelay);
         } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
           console.error("[WS] ❌ Max reconnect attempts reached. Giving up.");
           this.notifyConnectionState("failed");
+=======
+
+            // Ghi Little-Endian (server là x86)
+            view.setInt32(this.OFFSET_PAYLOAD, payload.ship_type, true); // offset 0-3
+            view.setInt32(this.OFFSET_PAYLOAD + 4, payload.row, true); // offset 4-7
+            view.setInt32(this.OFFSET_PAYLOAD + 8, payload.col, true); // offset 8-11
+            view.setUint8(
+                this.OFFSET_PAYLOAD + 12,
+                payload.is_horizontal ? 1 : 0
+            ); // offset 12
+
+            // ✅ Ghi padding = 0
+            view.setUint8(this.OFFSET_PAYLOAD + 13, 0);
+            view.setUint8(this.OFFSET_PAYLOAD + 14, 0);
+            view.setUint8(this.OFFSET_PAYLOAD + 15, 0);
+
+            // ✅ DEBUG: In ra hex dump
+            const hexDump = Array.from(
+                new Uint8Array(buffer, this.OFFSET_PAYLOAD, 16)
+            )
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join(" ");
+            console.log("[WS] PLACE_SHIP hex dump (first 16 bytes):", hexDump);
+        } else if (type === MSG_TYPES.PLAYER_MOVE) {
+            // Serialize: game_id (65) + row (4) + col (4) = 73 bytes
+            const gameIdBytes = new TextEncoder().encode(payload.game_id);
+            uint8.set(gameIdBytes.slice(0, 64), this.OFFSET_PAYLOAD);
+            uint8[this.OFFSET_PAYLOAD + 64] = 0; // Null terminator
+
+            view.setInt32(this.OFFSET_PAYLOAD + 65, payload.row, true);
+            view.setInt32(this.OFFSET_PAYLOAD + 69, payload.col, true);
+
+            console.log(
+                `[WS] Serialized PLAYER_MOVE: game_id=${payload.game_id}, row=${payload.row}, col=${payload.col}`
+            );
+        } else if (type === MSG_TYPES.CHAT) {
+            console.log("[WS] === CHAT SERIALIZATION START ===");
+            console.log("[WS] Payload:", payload);
+            console.log("[WS] OFFSET_PAYLOAD:", this.OFFSET_PAYLOAD);
+            console.log("[WS] GAME_ID_LEN:", this.GAME_ID_LEN);
+            console.log("[WS] CHAT_LEN:", this.CHAT_LEN);
+
+            // Check type field BEFORE writing payload
+            const typeBeforePayload = Array.from(uint8.slice(0, 4))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join(" ");
+            console.log(
+                `[WS] Type field BEFORE payload write: ${typeBeforePayload}`
+            );
+
+            // ✅ GHI game_id tại offset 516
+            const gameIdBytes = new TextEncoder().encode(payload.game_id || "");
+            console.log(
+                `[WS] Writing game_id "${payload.game_id}" (${gameIdBytes.length} bytes) at offset ${this.OFFSET_PAYLOAD}`
+            );
+            uint8.set(
+                gameIdBytes.slice(0, this.GAME_ID_LEN - 1),
+                this.OFFSET_PAYLOAD
+            );
+            uint8[this.OFFSET_PAYLOAD + this.GAME_ID_LEN - 1] = 0;
+
+            // Check type field AFTER writing game_id
+            const typeAfterGameId = Array.from(uint8.slice(0, 4))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join(" ");
+            console.log(
+                `[WS] Type field AFTER game_id write: ${typeAfterGameId}`
+            );
+
+            // ✅ GHI message tại offset 516 + 64 = 580
+            const messageOffset = this.OFFSET_PAYLOAD + this.GAME_ID_LEN;
+            const messageBytes = new TextEncoder().encode(payload.message);
+            console.log(
+                `[WS] Writing message "${payload.message}" (${messageBytes.length} bytes) at offset ${messageOffset}`
+            );
+            uint8.set(messageBytes.slice(0, this.CHAT_LEN - 1), messageOffset);
+            uint8[messageOffset + this.CHAT_LEN - 1] = 0;
+
+            // Check type field AFTER writing message
+            const typeAfterMessage = Array.from(uint8.slice(0, 4))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join(" ");
+            console.log(
+                `[WS] Type field AFTER message write: ${typeAfterMessage}`
+            );
+
+            // Final verification
+            const finalTypeCheck = view.getUint32(this.OFFSET_TYPE, true);
+            console.log(
+                `[WS] Final type check: ${finalTypeCheck} (should be ${MSG_TYPES.CHAT})`
+            );
+
+            const sentGameId = new TextDecoder()
+                .decode(
+                    uint8.slice(this.OFFSET_PAYLOAD, this.OFFSET_PAYLOAD + 64)
+                )
+                .replace(/\0/g, "");
+            const sentMessage = new TextDecoder()
+                .decode(uint8.slice(messageOffset, messageOffset + 128))
+                .replace(/\0/g, "");
+            console.log(
+                `[WS] Verified CHAT: game_id="${sentGameId}", message="${sentMessage}"`
+            );
+            console.log("[WS] === CHAT SERIALIZATION END ===");
+        } else if (type === MSG_TYPES.PLAYER_READY) {
+            // ✅ Đảm bảo gửi đúng thứ tự: game_id (65 bytes) + board_state (100 bytes)
+
+            // 1. Write game_id (65 bytes)
+            const gameIdBytes = new TextEncoder().encode(payload.game_id);
+            uint8.set(gameIdBytes.slice(0, 64), this.OFFSET_PAYLOAD);
+            uint8[this.OFFSET_PAYLOAD + 64] = 0; // Null terminator
+
+            // 2. Write board_state (100 bytes)
+            if (payload.board_state && Array.isArray(payload.board_state)) {
+                const boardBytes = new Uint8Array(payload.board_state);
+                uint8.set(boardBytes.slice(0, 100), this.OFFSET_PAYLOAD + 65);
+            }
+>>>>>>> 46f3a895e1dab7c7a2a818917352d43e37e174d1
         }
       };
     });
@@ -192,9 +590,181 @@ class WebSocketService {
   startPing() {
     this.stopPing(); // Clear existing interval
 
+<<<<<<< HEAD
     this.pingInterval = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         console.log("[WS] Sending ping...");
+=======
+        // Hàm tiện ích để đọc chuỗi C (kết thúc bằng \0)
+        const decodeCString = (offset, length) => {
+            const bytes = uint8.slice(offset, offset + length);
+            const nullTerminator = bytes.indexOf(0);
+            return decoder.decode(
+                bytes.slice(0, nullTerminator > -1 ? nullTerminator : length)
+            );
+        };
+
+        if (type === MSG_TYPES.AUTH_SUCCESS) {
+            // Server gửi: resp.payload.auth_suc.token và resp.payload.auth_suc.username
+
+            // Đọc token TỪ BÊN TRONG PAYLOAD (offset 516)
+            payload.token = decodeCString(
+                this.OFFSET_PAYLOAD,
+                this.MAX_JWT_LEN
+            );
+
+            // Đọc username TỪ BÊN TRONG PAYLOAD (offset 516 + 512 = 1028)
+            payload.username = decodeCString(
+                this.OFFSET_PAYLOAD + this.MAX_JWT_LEN,
+                this.USERNAME_LEN
+            );
+        } else if (type === MSG_TYPES.AUTH_FAILED) {
+            // Server gửi: resp.payload.auth_fail.reason
+            // Đọc reason TỪ BÊN TRONG PAYLOAD (offset 516)
+            payload.reason = decodeCString(
+                this.OFFSET_PAYLOAD,
+                this.REASON_LEN
+            );
+        } else if (type === MSG_TYPES.MOVE_RESULT) {
+            // Deserialize: row(4) + col(4) + is_hit(1) + is_sunk(1) + sunk_ship_type(4) + game_over(1) + is_your_shot(1)
+            payload.row = view.getInt32(this.OFFSET_PAYLOAD, true);
+            payload.col = view.getInt32(this.OFFSET_PAYLOAD + 4, true);
+            payload.is_hit = view.getUint8(this.OFFSET_PAYLOAD + 8) === 1;
+            payload.is_sunk = view.getUint8(this.OFFSET_PAYLOAD + 9) === 1;
+            payload.sunk_ship_type = view.getInt32(
+                this.OFFSET_PAYLOAD + 10,
+                true
+            );
+            payload.game_over = view.getUint8(this.OFFSET_PAYLOAD + 14) === 1;
+            payload.is_your_shot =
+                view.getUint8(this.OFFSET_PAYLOAD + 15) === 1;
+
+            console.log("[WS] MOVE_RESULT deserialized:", payload);
+        } else if (type === MSG_TYPES.START_GAME) {
+            // ✅ DESERIALIZE START_GAME: opponent (32 bytes) + game_id (64 bytes) + current_turn[32] = 128 bytes
+            payload.opponent = decodeCString(this.OFFSET_PAYLOAD, 32);
+            payload.game_id = decodeCString(this.OFFSET_PAYLOAD + 32, 64);
+            payload.current_turn = decodeCString(this.OFFSET_PAYLOAD + 96, 32);
+            // ✅ DEBUG LOG
+            console.log("[WS] <<<< START_GAME received:", {
+                type,
+                opponent: payload.opponent,
+                game_id: payload.game_id,
+                opponent_length: payload.opponent.length,
+                game_id_length: payload.game_id.length,
+            });
+        } else if (type === MSG_TYPES.CHAT_MESSAGE) {
+            // ✅ Deserialize MSG_CHAT_MESSAGE: username (64 bytes) + text (128 bytes)
+            payload.username = decodeCString(this.OFFSET_PAYLOAD, 64);
+            payload.text = decodeCString(this.OFFSET_PAYLOAD + 64, 128);
+
+            console.log("[WS] CHAT_MESSAGE received:", {
+                username: payload.username,
+                text: payload.text,
+            });
+        } else if (type === MSG_TYPES.ONLINE_PLAYERS_LIST) {
+            // ✅ Deserialize danh sách players
+            // Struct: count(4) + players[50][64] + elo_ratings[50*4] + ranks[50][32]
+
+            payload.count = view.getInt32(this.OFFSET_PAYLOAD, true);
+            payload.players = [];
+
+            let offset = this.OFFSET_PAYLOAD + 4; // Bắt đầu sau count
+
+            // Đọc 50 usernames (mỗi username 64 bytes)
+            const usernames = [];
+            for (let i = 0; i < 50; i++) {
+                const username = decodeCString(offset, 64);
+                usernames.push(username);
+                offset += 64;
+            }
+            // Đọc 50 elo_ratings (mỗi int 4 bytes)
+            const eloRatings = [];
+            for (let i = 0; i < 50; i++) {
+                const elo = view.getInt32(offset, true);
+                eloRatings.push(elo);
+                offset += 4;
+            }
+            // Đọc 50 ranks (mỗi rank 32 bytes)
+
+            const ranks = [];
+            for (let i = 0; i < 50; i++) {
+                const rank = decodeCString(offset, 32);
+                ranks.push(rank);
+                offset += 32;
+            }
+
+            // Chỉ lấy số lượng players thực tế
+            for (let i = 0; i < payload.count; i++) {
+                payload.players.push({
+                    username: usernames[i],
+                    eloRating: eloRatings[i],
+                    rank: ranks[i],
+                });
+            }
+
+            console.log(
+                `[WS] Received ${payload.count} online players:`,
+                payload.players
+            );
+        }
+
+        // Thêm các loại tin nhắn khác ở đây
+
+        return { type, payload };
+    }
+
+    sendMessage(type, payload) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            throw new Error("WebSocket not connected");
+        }
+
+        // Lấy token từ authService (hoặc localStorage) nếu tin nhắn cần xác thực
+        let token = "";
+        if (type !== MSG_TYPES.REGISTER && type !== MSG_TYPES.LOGIN) {
+            // Bạn cần triển khai hàm getToken() này trong authService
+            token = localStorage.getItem("auth_token") || "";
+        }
+
+        // Gửi tin nhắn đã được đóng gói đúng
+        const buffer = this.serializeMessage(type, payload, token);
+        this.ws.send(buffer);
+    }
+
+    handleMessage(data) {
+        const message = this.deserializeMessage(data);
+        if (!message) return; // Bỏ qua tin nhắn không hợp lệ
+
+        const handlers = this.messageHandlers.get(message.type);
+        if (handlers) {
+            handlers.forEach((handler) => handler(message.payload));
+        }
+    }
+
+    // (onMessage và offMessage giữ nguyên)
+    onMessage(type, handler) {
+        if (!this.messageHandlers.has(type)) {
+            this.messageHandlers.set(type, []);
+        }
+        this.messageHandlers.get(type).push(handler);
+    }
+
+    offMessage(type, handler) {
+        const handlers = this.messageHandlers.get(type);
+        if (handlers) {
+            const index = handlers.indexOf(handler);
+            if (index > -1) {
+                handlers.splice(index, 1);
+            }
+        }
+    }
+
+    joinQueue() {
+        const token = localStorage.getItem("auth_token");
+        if (!token) {
+            throw new Error("Not authenticated");
+        }
+>>>>>>> 46f3a895e1dab7c7a2a818917352d43e37e174d1
 
         // Gửi MSG_PING để keep-alive
         const buffer = new ArrayBuffer(this.MESSAGE_T_SIZE);

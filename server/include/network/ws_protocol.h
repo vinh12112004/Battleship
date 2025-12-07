@@ -108,7 +108,8 @@ typedef struct __attribute__((packed)) {
     uint8_t _padding[1];  // Align to 16 bytes
 } move_result_payload;
 typedef struct { char opponent[32]; char game_id[64]; char current_turn[32];} start_game_payload;
-typedef struct { char message[128]; } chat_payload;
+typedef struct { char game_id[64]; char message[128]; } chat_payload;
+typedef struct { char username[64]; char text[128]; } chat_message_payload;
 typedef struct __attribute__((packed)) {
     char game_id[65];
     uint8_t board_state[BOARD_SIZE];
@@ -142,6 +143,7 @@ typedef struct __attribute__((packed)) {
         move_result_payload move_res;
         start_game_payload start_game;
         chat_payload chat;
+        chat_message_payload chat_msg;
         place_ship_payload place_ship;
         ready_payload ready;
         online_players_payload online_players;
