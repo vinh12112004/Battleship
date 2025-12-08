@@ -111,13 +111,15 @@ typedef struct __attribute__((packed)) {
 typedef struct { char opponent[32]; char game_id[64]; char current_turn[32];} start_game_payload;
 typedef struct { char game_id[64]; char message[128]; } chat_payload;
 typedef struct { char username[64]; char text[128]; } chat_message_payload;
+
 typedef struct __attribute__((packed)) {
     char game_id[65];
     uint8_t board_state[BOARD_SIZE];
 } ready_payload;
+
 typedef struct {
     int count;
-    char players[50][64];  // Tối đa 50 players, mỗi username 64 chars
+    char players[50][64];
     int elo_ratings[50];
     char ranks[50][32];
 } online_players_payload;

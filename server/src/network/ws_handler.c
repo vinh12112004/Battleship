@@ -566,7 +566,7 @@ void handle_get_online_players(int client_sock, const char *token) {
     log_info("User %s requesting online players list", user_id);
     
     // Lấy danh sách online players từ database
-    online_players_t *players = user_get_online_players();
+    online_players_t *players = user_get_online_players(user_id);
     
     if (!players) {
         log_error("Failed to get online players");

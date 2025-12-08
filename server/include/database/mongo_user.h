@@ -32,7 +32,7 @@ bool user_update_status(const char *user_id, const char *status);
 bool user_update_elo(const char *user_id, int new_elo);
 void user_free(user_t *user);
 
-online_players_t* user_get_online_players(void);
+online_players_t* user_get_online_players(const char *exclude_user_id);
 void online_players_free(online_players_t *players);
 
 #endif // MONGO_USER_H
