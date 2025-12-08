@@ -7,6 +7,7 @@
 #include <time.h>
 #include "database/mongo_user.h"
 #include "network/ws_protocol.h"
+#include "game/elo.h"
 #include "network/ws_server.h"
 #define COLLECTION_GAMES "games"
 #define MAX_ACTIVE_GAMES 100
@@ -595,7 +596,7 @@ shot_result_t game_process_shot(const char *game_id, const char *player_id, int 
     
     // ✅ Process shot on target board
     result = board_process_shot(target_board, row, col);
-    
+    //
     log_info("Shot result: hit=%d, sunk=%d, type=%d, game_over=%d",
              result.is_hit, result.is_sunk, result.sunk_ship_type, result.game_over);
     
@@ -649,7 +650,13 @@ bool game_end(const char *game_id, const char *winner_id) {
     } else {
         log_error("Failed to update game end: %s", error.message);
     }
-    
+    const char* loser_id ;
+    if (winner_id != game->player1_id){
+        loser_id = game->player1_id;
+    }else{
+        loser_id = game->player2_id;
+    }
+    elo_update_after_match(winner_id,loser_id);
     bson_destroy(query);
     bson_destroy(update);
     mongoc_collection_destroy(collection);
