@@ -1,6 +1,6 @@
-#include "network/ws_server.h"
-#include "network/ws_protocol.h"
-#include "network/ws_handler.h"
+#include "network/tcp_server.h"
+#include "network/tcp_protocol.h"
+#include "network/tcp_handler.h"
 #include "utils/logger.h"
 #include "matchmaking/matcher.h"
 #include "game/game.h"
@@ -14,6 +14,7 @@
 #include <arpa/inet.h>
 #include <sys/time.h>
 #include "matchmaking/challenge_manager.h"
+#include <errno.h>
 
 #define MAX_CLIENTS 100
 
@@ -26,11 +27,11 @@ typedef struct {
 static client_info_t g_clients[MAX_CLIENTS];
 static pthread_mutex_t g_clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// ✅ Register client khi login thành công
+// Register client when login successful
 void client_register(int client_sock, const char *user_id) {
     pthread_mutex_lock(&g_clients_mutex);
 
-    // ✅ Step 1: Check if user already registered (including disconnected with socket=-1)
+    // Step 1: Check if user already registered
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].authenticated && 
             strcmp(g_clients[i].user_id, user_id) == 0) {
@@ -38,29 +39,22 @@ void client_register(int client_sock, const char *user_id) {
             int old_socket = g_clients[i].socket;
             
             if (old_socket == -1) {
-                // User was disconnected, now reconnecting
                 log_info("✅ [CLIENT_REGISTER] User %s reconnected (new socket=%d)", 
                          user_id, client_sock);
             } else if (old_socket != client_sock) {
-                // User logging in from different socket
                 log_warn("🔄 [CLIENT_REGISTER] User %s already registered (old socket=%d → new socket=%d)", 
                          user_id, old_socket, client_sock);
                 
-                // Close old socket if still open
                 if (old_socket > 0) {
                     log_info("   Closing old socket %d", old_socket);
                     close(old_socket);
                 }
             } else {
-                // Same socket, same user (redundant call)
                 log_info("✅ [CLIENT_REGISTER] User %s already at socket %d", 
                          user_id, client_sock);
             }
             
-            // Update to new socket
             g_clients[i].socket = client_sock;
-            
-            // Update user status to online
             user_update_status(user_id, "online");
             
             pthread_mutex_unlock(&g_clients_mutex);
@@ -68,7 +62,7 @@ void client_register(int client_sock, const char *user_id) {
         }
     }
     
-    // ✅ Step 2: User not found → Register new entry
+    // Step 2: User not found → Register new entry
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].socket == 0 || g_clients[i].socket == -1) {
             g_clients[i].socket = client_sock;
@@ -79,7 +73,6 @@ void client_register(int client_sock, const char *user_id) {
             log_info("✅ [CLIENT_REGISTER] New registration at slot %d: socket=%d, user_id=%s", 
                      i, client_sock, user_id);
             
-            // Set user status to online
             user_update_status(user_id, "online");
             
             pthread_mutex_unlock(&g_clients_mutex);
@@ -87,9 +80,8 @@ void client_register(int client_sock, const char *user_id) {
         }
     }
     
-    //Step 3: Registry full
-    log_error("❌ [CLIENT_REGISTER] Registry FULL! Cannot register user_id=%s", 
-              user_id);
+    // Step 3: Registry full
+    log_error("❌ [CLIENT_REGISTER] Registry FULL! Cannot register user_id=%s", user_id);
     
     pthread_mutex_unlock(&g_clients_mutex);
 }
@@ -124,15 +116,14 @@ void* challenge_expiration_thread(void* arg) {
     log_info("Challenge expiration thread started");
     
     while (1) {
-        sleep(5);  // Check every 5 seconds
-        // Check for expired challenges
+        sleep(5);
         challenge_check_expired();
     }
     
     return NULL;
 }
 
-// Cleanup khi disconnect
+// Cleanup when disconnect
 static void client_cleanup(int client_sock) {
     pthread_mutex_lock(&g_clients_mutex);
     
@@ -142,18 +133,18 @@ static void client_cleanup(int client_sock) {
                 log_info("[CLEANUP] Client socket=%d, user_id=%s", 
                          client_sock, g_clients[i].user_id);
                 
-                // Xóa khỏi matchmaking queue
                 matcher_remove_from_queue(g_clients[i].user_id);
                 g_clients[i].socket = -1;
+                
                 char user_id[64];
                 strncpy(user_id, g_clients[i].user_id, 63);
                 user_id[63] = '\0';
+                
                 if (user_id[0] != '\0') {
-                user_update_status(user_id, "offline");
-                log_info("✅ User %s marked offline in database", user_id);
-            }
+                    user_update_status(user_id, "offline");
+                    log_info("✅ User %s marked offline in database", user_id);
+                }
             } else {
-                // User chưa authenticated → xóa luôn
                 g_clients[i].socket = 0;
                 g_clients[i].user_id[0] = '\0';
                 g_clients[i].authenticated = false;
@@ -165,7 +156,7 @@ static void client_cleanup(int client_sock) {
     pthread_mutex_unlock(&g_clients_mutex);
 }
 
-// ====================== Thread client ======================
+// Client thread
 void* client_thread(void* arg) {
     int client_sock = (int)(intptr_t)arg;
     message_t msg;
@@ -177,53 +168,44 @@ void* client_thread(void* arg) {
     timeout.tv_usec = 0;
     
     if (setsockopt(client_sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        log_warn("Không thể set socket timeout");
+        log_warn("Cannot set socket timeout");
     }
     
-    // Perform WebSocket handshake
-    if (ws_handshake(client_sock) < 0) {
-        log_error("WebSocket handshake failed for socket %d", client_sock);
-        close(client_sock);
-        return NULL;
-    }
-
-    log_info("WebSocket handshake completed for socket %d", client_sock);
+    log_info("TCP connection ready for socket %d", client_sock);
 
     while (1) {
-        log_debug("Waiting for WebSocket message from client %d...", client_sock);
+        log_debug("Waiting for TCP message from client %d...", client_sock);
         
-        int n = ws_recv_message(client_sock, &msg);
+        ssize_t n = tcp_recv_message(client_sock, &msg);
         
         if (n == 0) {
-            log_info("Client %d closed WebSocket connection gracefully", client_sock);
+            log_info("Client %d closed TCP connection gracefully", client_sock);
             break;
         }
         
         if (n < 0) {
-            log_debug("%d", n);
-            log_error("ws_recv_message error for client %d", client_sock);
+            log_error("tcp_recv_message error for client %d", client_sock);
             break;
         }
 
-        log_info("Received WebSocket message type=%d from client %d", msg.type, client_sock);
+        log_info("Received TCP message type=%d from client %d", msg.type, client_sock);
 
-        // Handle message
         handle_message(client_sock, &msg);
         
-        log_info("Message handled successfully for client %d, waiting for next message...", client_sock);
+        log_debug("Message handled successfully for client %d", client_sock);
     }
 
     log_info("[DISCONNECT] Client %d disconnecting, cleaning up...", client_sock);
     client_cleanup(client_sock);
     
-    close(client_sock);
+    tcp_close(client_sock);
     log_info("Client %d thread terminated", client_sock);
     
     return NULL;
 }
 
-// ====================== Setup server ======================
-int setup_ws_server(uint16_t port) {
+// Setup server
+int setup_tcp_server(uint16_t port) {
     int server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sock < 0) {
         log_error("Socket creation failed");
@@ -255,55 +237,58 @@ int setup_ws_server(uint16_t port) {
         return -1;
     }
 
-    log_info("WebSocket server listening on port %d", port);
+    log_info("TCP server listening on port %d", port);
     return server_sock;
 }
 
-// ====================== Start server ======================
-void start_ws_server(uint16_t port) {
-    int server_sock = setup_ws_server(port);
+// Start server
+void start_tcp_server(uint16_t port) {
+    int server_sock = setup_tcp_server(port);
     if (server_sock < 0) return;
 
-    log_info("WebSocket server ready to accept connections");
+    log_info("TCP server ready to accept connections");
     memset(g_clients, 0, sizeof(g_clients));
+    
     challenge_manager_init();
+    
     pthread_t expiration_tid;
-    int result = pthread_create(&expiration_tid, NULL, challenge_expiration_thread, NULL);
-    if (result == 0) {
+    if (pthread_create(&expiration_tid, NULL, challenge_expiration_thread, NULL) == 0) {
         pthread_detach(expiration_tid);
         log_info("Challenge expiration thread created");
     } else {
-        log_error("Failed to create expiration thread: %d", result);
+        log_error("Failed to create expiration thread");
     }
+    
     game_init_timeout_monitor();
+    
     while (1) {
         struct sockaddr_in client_addr;
         socklen_t addr_len = sizeof(client_addr);
         
-        log_debug("Waiting for new WebSocket client connection...");
+        log_debug("Waiting for new TCP client connection...");
         int client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
         
         if (client_sock < 0) {
-            log_error("Accept failed");
+            log_error("Accept failed: %s", strerror(errno));
             continue;
         }
 
-        log_info("New WebSocket connection accepted from %s:%d", 
+        log_info("✅ New TCP connection from %s:%d (socket=%d)", 
                  inet_ntoa(client_addr.sin_addr), 
-                 ntohs(client_addr.sin_port));
+                 ntohs(client_addr.sin_port),
+                 client_sock);
 
-        // Create thread for client
-        pthread_t thread_id;
-        if (pthread_create(&thread_id, NULL, client_thread, (void*)(intptr_t)client_sock) == 0) {
-            log_debug("Thread created for WebSocket client socket=%d", client_sock);
-            pthread_detach(thread_id); // Auto cleanup when thread finishes
-        } else {
-            log_error("Failed to create thread for WebSocket client");
+        pthread_t tid;
+        if (pthread_create(&tid, NULL, client_thread, (void*)(intptr_t)client_sock) != 0) {
+            log_error("Failed to create client thread");
             close(client_sock);
+            continue;
         }
+        
+        pthread_detach(tid);
     }
-
+    
     challenge_manager_cleanup();
     close(server_sock);
-    log_info("WebSocket server shutdown");
+    log_info("TCP server shutdown");
 }

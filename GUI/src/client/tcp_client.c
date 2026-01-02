@@ -17,7 +17,6 @@ int tcp_connect(const char *host, uint16_t port) {
     
     struct sockaddr_in server_addr = {0};
     server_addr.sin_family = AF_INET;
-
     server_addr.sin_port = htons(port);
     
     if (inet_pton(AF_INET, host, &server_addr.sin_addr) <= 0) {
@@ -42,6 +41,7 @@ int tcp_disconnect(int sockfd) {
     if (sockfd < 0) return -1;
     
     printf("[TCP] Closing connection (fd=%d)\n", sockfd);
+    shutdown(sockfd, SHUT_RDWR);
     close(sockfd);
     return 0;
 }
@@ -65,13 +65,8 @@ int tcp_set_nonblocking(int sockfd) {
 
 // ==================== MESSAGE HELPERS ====================
 void tcp_message_init(tcp_message_t *msg, int32_t type) {
-    // Xóa sạch bộ nhớ (đảm bảo padding bằng 0)
     memset(msg, 0, sizeof(tcp_message_t));
-    
-    // Gán Type trực tiếp (Little Endian / Native)
     msg->type = type;
-    
-    // Token mặc định là rỗng (do memset), Python sẽ điền sau nếu cần
 }
 
 void tcp_message_set_payload(tcp_message_t *msg, const void *data, uint16_t len) {
@@ -79,11 +74,7 @@ void tcp_message_set_payload(tcp_message_t *msg, const void *data, uint16_t len)
         fprintf(stderr, "[TCP] Payload too large: %u > %u\n", len, MAX_PAYLOAD_SIZE);
         return;
     }
-    
-    // Copy dữ liệu vào vùng payload
     memcpy(msg->payload, data, len);
-    
-    // Không cần set payload_len vì cấu trúc mới là cố định (Fixed Size)
 }
 
 // ==================== SEND MESSAGE ====================
@@ -93,22 +84,32 @@ int tcp_send(int sockfd, tcp_message_t *msg) {
         return -1;
     }
 
+    // Step 1: Send 4-byte length header (network byte order)
+    uint32_t msg_len = htonl(MESSAGE_SIZE);
+    
+    ssize_t sent = send(sockfd, &msg_len, sizeof(msg_len), 0);
+    if (sent != sizeof(msg_len)) {
+        perror("send() length header failed");
+        return -1;
+    }
+    
+    printf("[TCP] Sent length header: %u bytes\n", MESSAGE_SIZE);
+    
+    // Step 2: Send message body
     ssize_t total_sent = 0;
-    // Gửi toàn bộ kích thước cố định (5520 bytes)
     ssize_t remaining = MESSAGE_SIZE;
     uint8_t *buf = (uint8_t*)msg;
     
     while (remaining > 0) {
-        ssize_t sent = send(sockfd, buf + total_sent, remaining, 0);
+        sent = send(sockfd, buf + total_sent, remaining, 0);
         
         if (sent < 0) {
-            if (errno == EINTR) continue;  // Bị ngắt, thử lại
+            if (errno == EINTR) continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // Socket non-blocking đang bận, chờ xíu
-                usleep(1000);  // 1ms
+                usleep(1000);
                 continue;
             }
-            perror("send() failed");
+            perror("send() body failed");
             return -1;
         }
         
@@ -116,8 +117,8 @@ int tcp_send(int sockfd, tcp_message_t *msg) {
         remaining -= sent;
     }
     
-    // In log debug (Không dùng ntohs vì đang dùng Native Endian)
-    printf("[TCP] Sent message: type=%d (%zd bytes)\n", msg->type, total_sent);
+    printf("[TCP] Sent message body: type=%d (%zd bytes total)\n", 
+           msg->type, total_sent);
     
     return 0;
 }
@@ -131,35 +132,72 @@ int tcp_recv(int sockfd, tcp_message_t *msg) {
     
     memset(msg, 0, sizeof(tcp_message_t));
     
-    ssize_t total_recv = 0;
-    // Nhận đúng kích thước cố định (5520 bytes)
-    ssize_t remaining = MESSAGE_SIZE;
-    uint8_t *buf = (uint8_t*)msg;
+    // Step 1: Read 4-byte length header
+    uint32_t msg_len = 0;
+    ssize_t bytes_received = 0;
+    ssize_t remaining = sizeof(msg_len);
+    uint8_t *len_buf = (uint8_t*)&msg_len;
     
     while (remaining > 0) {
-        ssize_t received = recv(sockfd, buf + total_recv, remaining, 0);
+        ssize_t received = recv(sockfd, len_buf + bytes_received, remaining, 0);
         
         if (received < 0) {
             if (errno == EINTR) continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // Non-blocking, chưa có dữ liệu
-                return 0;
+                return 0; // Non-blocking, no data yet
             }
-            perror("recv() failed");
+            perror("recv() length header failed");
             return -1;
         }
         
         if (received == 0) {
-            // Server đóng kết nối
             printf("[TCP] Connection closed by server\n");
             return -2;
         }
         
-        total_recv += received;
+        bytes_received += received;
         remaining -= received;
     }
     
-    printf("[TCP] Received message: type=%d\n", msg->type);
+    msg_len = ntohl(msg_len); // Network to host byte order
+    printf("[TCP] Received length header: %u bytes\n", msg_len);
     
-    return 1;  // Success
+    // Step 2: Validate message size
+    if (msg_len != MESSAGE_SIZE) {
+        fprintf(stderr, "[TCP] Invalid message size: expected=%u, got=%u\n", 
+                MESSAGE_SIZE, msg_len);
+        return -1;
+    }
+    
+    // Step 3: Read message body
+    bytes_received = 0;
+    remaining = MESSAGE_SIZE;
+    uint8_t *buf = (uint8_t*)msg;
+    
+    while (remaining > 0) {
+        ssize_t received = recv(sockfd, buf + bytes_received, remaining, 0);
+        
+        if (received < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                usleep(1000);
+                continue;
+            }
+            perror("recv() body failed");
+            return -1;
+        }
+        
+        if (received == 0) {
+            printf("[TCP] Connection closed during body read\n");
+            return -2;
+        }
+        
+        bytes_received += received;
+        remaining -= received;
+    }
+    
+    printf("[TCP] Received message: type=%d (%zd bytes)\n", 
+           msg->type, bytes_received);
+    
+    return 1; // Success
 }

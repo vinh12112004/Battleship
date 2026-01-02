@@ -1,15 +1,13 @@
-#ifndef WS_HANDLER_H
-#define WS_HANDLER_H
+#ifndef TCP_HANDLER_H
+#define TCP_HANDLER_H
 
-#include "ws_protocol.h"
+#include "tcp_protocol.h"
 
 typedef struct {
     char user_id[64];
 } auth_user_t;
-// Xử lý message chung
-void handle_message(int client_sock, message_t *msg);
 
-// Các hàm xử lý chi tiết
+void handle_message(int client_sock, message_t *msg);
 void handle_register(int client_sock, auth_payload *auth);
 void handle_login(int client_sock, auth_payload *auth);
 void handle_join_queue(int client_sock, const char *token);
@@ -26,4 +24,5 @@ void handle_challenge_accept(int client_sock, challenge_response_payload *payloa
 void handle_challenge_decline(int client_sock, challenge_response_payload *payload, const char *token);
 void handle_challenge_cancel(int client_sock, challenge_response_payload *payload, const char *token);
 void handle_auth_token(int client_sock, const char *token);
+
 #endif

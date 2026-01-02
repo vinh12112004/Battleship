@@ -1,5 +1,5 @@
 #include "matchmaking/challenge_manager.h"
-#include "network/ws_protocol.h"
+#include "network/tcp_protocol.h"
 #include "utils/logger.h"
 #include <string.h>
 #include <stdlib.h>
@@ -9,7 +9,7 @@
 static challenge_session_t challenges[MAX_CHALLENGES];
 static int challenge_count = 0;
 
-extern ssize_t ws_send_message(int sock, message_t *msg);
+extern ssize_t tcp_send_message(int sock, message_t *msg);
 
 void challenge_manager_init(void) {
     memset(challenges, 0, sizeof(challenges));
@@ -184,7 +184,7 @@ void challenge_check_expired(void) {
                 strncpy(expire_msg.payload.challenge_resp.challenge_id, 
                         challenges[i].challenge_id, 64);
                 
-                ws_send_message(challenges[i].challenger_socket, &expire_msg);
+                tcp_send_message(challenges[i].challenger_socket, &expire_msg);
                 log_info("Sent CHALLENGE_EXPIRED to challenger (socket %d)", 
                          challenges[i].challenger_socket);
             }
@@ -196,7 +196,7 @@ void challenge_check_expired(void) {
                 strncpy(expire_msg.payload.challenge_resp.challenge_id, 
                         challenges[i].challenge_id, 64);
                 
-                ws_send_message(challenges[i].target_socket, &expire_msg);
+                tcp_send_message(challenges[i].target_socket, &expire_msg);
                 log_info("Sent CHALLENGE_EXPIRED to target (socket %d)", 
                          challenges[i].target_socket);
             }
