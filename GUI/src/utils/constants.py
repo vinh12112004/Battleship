@@ -43,8 +43,8 @@ COLORS = {
     'warning': '#ffa502',
     'hit': '#ff4757',
     'miss': '#94a3b8',
-    'ship': '#00d084',
-    'water': '#1a2332',
+    'water': '#1e3a5f', 
+    'ship': '#00d9ff',
 }
 
 # Network
