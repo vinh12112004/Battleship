@@ -30,7 +30,6 @@ static pthread_mutex_t g_clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 void client_register(int client_sock, const char *user_id) {
     pthread_mutex_lock(&g_clients_mutex);
 
-    // ✅ Step 1: Check if user already registered (including disconnected with socket=-1)
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].authenticated && 
             strcmp(g_clients[i].user_id, user_id) == 0) {
@@ -38,37 +37,27 @@ void client_register(int client_sock, const char *user_id) {
             int old_socket = g_clients[i].socket;
             
             if (old_socket == -1) {
-                // User was disconnected, now reconnecting
                 log_info("✅ [CLIENT_REGISTER] User %s reconnected (new socket=%d)", 
                          user_id, client_sock);
             } else if (old_socket != client_sock) {
-                // User logging in from different socket
                 log_warn("🔄 [CLIENT_REGISTER] User %s already registered (old socket=%d → new socket=%d)", 
                          user_id, old_socket, client_sock);
-                
-                // Close old socket if still open
                 if (old_socket > 0) {
                     log_info("   Closing old socket %d", old_socket);
                     close(old_socket);
                 }
             } else {
-                // Same socket, same user (redundant call)
                 log_info("✅ [CLIENT_REGISTER] User %s already at socket %d", 
                          user_id, client_sock);
             }
-            
-            // Update to new socket
             g_clients[i].socket = client_sock;
-            
-            // Update user status to online
             user_update_status(user_id, "online");
             
             pthread_mutex_unlock(&g_clients_mutex);
             return;
         }
     }
-    
-    // ✅ Step 2: User not found → Register new entry
+
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].socket == 0 || g_clients[i].socket == -1) {
             g_clients[i].socket = client_sock;
@@ -79,7 +68,6 @@ void client_register(int client_sock, const char *user_id) {
             log_info("✅ [CLIENT_REGISTER] New registration at slot %d: socket=%d, user_id=%s", 
                      i, client_sock, user_id);
             
-            // Set user status to online
             user_update_status(user_id, "online");
             
             pthread_mutex_unlock(&g_clients_mutex);
@@ -124,7 +112,7 @@ void* challenge_expiration_thread(void* arg) {
     log_info("Challenge expiration thread started");
     
     while (1) {
-        sleep(5);  // Check every 5 seconds
+        sleep(1);  // Check every 1 seconds
         // Check for expired challenges
         challenge_check_expired();
     }

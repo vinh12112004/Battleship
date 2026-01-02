@@ -16,15 +16,15 @@ typedef enum {
 } challenge_status_t;
 
 typedef struct {
-    char challenge_id[65];        // UUID
-    char challenger_id[64];       // User ID
-    char target_id[64];           // User ID
+    char challenge_id[65];
+    char challenger_id[64];
+    char target_id[64];
     int challenger_socket;
     int target_socket;
     char game_mode[32];
     int time_control;
-    int64_t created_at;           // Timestamp (seconds)
-    int64_t expires_at;           // Timestamp (seconds)
+    int64_t created_at;
+    int64_t expires_at;          
     challenge_status_t status;
     bool is_active;
 } challenge_session_t;

@@ -174,10 +174,7 @@ void challenge_check_expired(void) {
             
             // Update status
             challenges[i].status = CHALLENGE_STATUS_EXPIRED;
-            
-            // ✅ SEND EXPIRATION MESSAGES TO BOTH PLAYERS
-            
-            // Send to challenger
+
             if (challenges[i].challenger_socket > 0) {
                 message_t expire_msg = {0};
                 expire_msg.type = MSG_CHALLENGE_EXPIRED;
@@ -201,7 +198,6 @@ void challenge_check_expired(void) {
                          challenges[i].target_socket);
             }
             
-            // ✅ Remove challenge after expiration
             challenge_remove(challenges[i].challenge_id);
         }
     }

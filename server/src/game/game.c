@@ -574,14 +574,12 @@ shot_result_t game_process_shot(const char *game_id, const char *player_id, int 
         log_warn("Game not in playing state");
         return result;
     }
-    
-    // ✅ Check turn
+
     if (!game_is_player_turn(game_id, player_id)) {
         log_warn("Not player's turn: %s", player_id);
         return result;
     }
-    
-    // ✅ Get opponent's board
+
     board_t *target_board = NULL;
     
     if (strcmp(game->player1_id, player_id) == 0) {
@@ -592,8 +590,7 @@ shot_result_t game_process_shot(const char *game_id, const char *player_id, int 
         log_error("Player not in game");
         return result;
     }
-    
-    // ✅ Process shot on target board
+
     result = board_process_shot(target_board, row, col);
     
     log_info("Shot result: hit=%d, sunk=%d, type=%d, game_over=%d",
