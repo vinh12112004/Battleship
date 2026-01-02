@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <winsock2.h>
-#include "network/ws_protocol.h"
+#include "network/tcp_protocol.h"
 char current_token[MAX_JWT_LEN] = "";
 void print_menu() {
     printf("\n========== TEST CLIENT MENU ==========\n");

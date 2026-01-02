@@ -6,8 +6,8 @@
 #include <string.h>
 #include <time.h>
 #include "database/mongo_user.h"
-#include "network/ws_protocol.h"
-#include "network/ws_server.h"
+#include "network/tcp_protocol.h"
+#include "network/tcp_server.h"
 #define COLLECTION_GAMES "games"
 #define MAX_ACTIVE_GAMES 100
 
@@ -720,7 +720,7 @@ void* game_timeout_monitor_thread(void* arg) {
                     warning.type = MSG_TURN_WARNING;
                     warning.payload.turn_warning.seconds_remaining = remaining;
                     
-                    ws_send_message(current_socket, &warning);
+                    tcp_send_message(current_socket, &warning);
                     log_info("[TIMEOUT_MONITOR] ✅ Sent TURN_WARNING: %d seconds remaining", remaining);
                     
                     game->turn_timeout_warned = true;
@@ -786,12 +786,12 @@ void* game_timeout_monitor_thread(void* arg) {
                 strncpy(timeout_msg.payload.game_timeout.reason, "timeout", 63);
                 
                 if (winner_socket > 0) {
-                    ws_send_message(winner_socket, &timeout_msg);
+                    tcp_send_message(winner_socket, &timeout_msg);
                     log_info("[TIMEOUT_MONITOR] ✅ Sent GAME_TIMEOUT to winner %s", winner_username);
                 }
                 
                 if (loser_socket > 0) {
-                    ws_send_message(loser_socket, &timeout_msg);
+                    tcp_send_message(loser_socket, &timeout_msg);
                     log_info("[TIMEOUT_MONITOR] ✅ Sent GAME_TIMEOUT to loser %s", loser_username);
                 }
                 game_end(game->game_id, winner_username);
@@ -1217,7 +1217,7 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
                     strncpy(start_msg.payload.start_game.opponent, p2_user->username, 31);
                     user_free(p2_user);
                 }
-                ws_send_message(game->player1_socket, &start_msg);
+                tcp_send_message(game->player1_socket, &start_msg);
                 log_info("✅ Sent START_GAME to player1 (socket %d)", game->player1_socket);
             }
             
@@ -1228,7 +1228,7 @@ bool game_set_player_ready(const char *game_id, const char *player_id, const uin
                     strncpy(start_msg.payload.start_game.opponent, p1_user_again->username, 31);
                     user_free(p1_user_again);
                 }
-                ws_send_message(game->player2_socket, &start_msg);
+                tcp_send_message(game->player2_socket, &start_msg);
                 log_info("✅ Sent START_GAME to player2 (socket %d)", game->player2_socket);
             }
         }

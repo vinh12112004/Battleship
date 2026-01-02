@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "network/ws_server.h"
+#include "network/tcp_server.h"
 #include "utils/logger.h"
 #include "database/mongo.h"
 #include "config.h"
@@ -7,7 +7,7 @@
 
 int main() {
     // 1️⃣ Log server start
-    log_info("Starting Battleship Server...");
+    log_info("Starting Battleship TCP Server...");
 
     // 2️⃣ Initialize MongoDB
     const char *mongo_uri = get_mongo_uri();
@@ -20,15 +20,18 @@ int main() {
     }
 
     log_info("MongoDB connected successfully.");
+    
+    // 3️⃣ Initialize matcher
     matcher_init();
-    // 3️⃣ Start WebSocket / TCP server
+    
+    // 4️⃣ Start TCP server
     uint16_t port = 9090;
-    log_info("Starting WebSocket/TCP server on port %d...", port);
-    start_ws_server(port);  // <- vòng lặp accept client bên trong
+    log_info("Starting TCP server on port %d...", port);
+    start_tcp_server(port);  // <- vòng lặp accept client bên trong
 
-    // 4️⃣ Cleanup (chỉ khi server dừng)
+    // 5️⃣ Cleanup (chỉ khi server dừng)
     mongo_cleanup(g_mongo_ctx);
-    log_info("Server stopped.");
+    log_info("TCP Server stopped.");
 
     return 0;
 }

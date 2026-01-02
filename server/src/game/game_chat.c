@@ -2,8 +2,8 @@
 #include "game/game.h"
 #include "database/mongo.h"
 #include "database/mongo_user.h"
-#include "network/ws_protocol.h"
-#include "network/ws_server.h"
+#include "network/tcp_protocol.h"
+#include "network/tcp_server.h"
 #include "utils/logger.h"
 #include <stdlib.h>
 #include <string.h>
@@ -93,24 +93,24 @@ bool game_chat_send_message(const char *game_id, const char *sender_id, const ch
     // Save to database
     game_chat_save_to_db(game->game_id, &msg);
     
-    // Prepare WebSocket message
-    message_t ws_msg = {0};
-    ws_msg.type = MSG_CHAT_MESSAGE;
+    // Prepare TCP message
+    message_t tcp_msg = {0};
+    tcp_msg.type = MSG_CHAT_MESSAGE;
     
-    strncpy(ws_msg.payload.chat_msg.username, sender->username, 63);
-    strncpy(ws_msg.payload.chat_msg.text, text, 127);
+    strncpy(tcp_msg.payload.chat_msg.username, sender->username, 63);
+    strncpy(tcp_msg.payload.chat_msg.text, text, 127);
     
     // Send to both players
     bool sent = false;
     
     if (game->player1_socket > 0) {
-        ws_send_message(game->player1_socket, &ws_msg);
+        tcp_send_message(game->player1_socket, &tcp_msg);
         log_info("Chat message sent to player1 (socket %d)", game->player1_socket);
         sent = true;
     }
     
     if (game->player2_socket > 0) {
-        ws_send_message(game->player2_socket, &ws_msg);
+        tcp_send_message(game->player2_socket, &tcp_msg);
         log_info("Chat message sent to player2 (socket %d)", game->player2_socket);
         sent = true;
     }

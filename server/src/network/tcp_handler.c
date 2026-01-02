@@ -1,5 +1,5 @@
-#include "network/ws_handler.h"
-#include "network/ws_server.h"
+#include "network/tcp_handler.h"
+#include "network/tcp_server.h"
 #include "auth/auth.h"
 #include "game/game.h"
 #include "game/game_chat.h"
@@ -61,7 +61,7 @@ void handle_message(int client_sock, message_t *msg) {
             log_debug("Received MSG_PING from client %d", client_sock);
             message_t pong = {0};
             pong.type = MSG_PONG;
-            ws_send_message(client_sock, &pong);
+            tcp_send_message(client_sock, &pong);
             break;
             
         case MSG_PONG:
@@ -120,7 +120,7 @@ void handle_auth_token(int client_sock, const char *token) {
         message_t resp = {0};
         resp.type = MSG_AUTH_FAILED;
         strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
-        ws_send_message(client_sock, &resp);
+        tcp_send_message(client_sock, &resp);
         return;
     }
     
@@ -133,7 +133,7 @@ void handle_auth_token(int client_sock, const char *token) {
         message_t resp = {0};
         resp.type = MSG_AUTH_FAILED;
         strncpy(resp.payload.auth_fail.reason, "User not found", 63);
-        ws_send_message(client_sock, &resp);
+        tcp_send_message(client_sock, &resp);
         return;
     }
     
@@ -149,7 +149,7 @@ void handle_auth_token(int client_sock, const char *token) {
     strncpy(resp.payload.auth_suc.token, token, MAX_JWT_LEN - 1);
     strncpy(resp.payload.auth_suc.username, user->username, 31);
     
-    ws_send_message(client_sock, &resp);
+    tcp_send_message(client_sock, &resp);
     
     log_info("[AUTH_TOKEN] ✅ User %s re-authenticated (socket %d)", 
              user->username, client_sock);
@@ -192,7 +192,7 @@ void handle_register(int client_sock, auth_payload *auth) {
     }
 
     // Send message via WebSocket
-    ssize_t sent = ws_send_message((int)client_sock, &resp);
+    ssize_t sent = tcp_send_message((int)client_sock, &resp);
     if (sent <= 0) {
         log_error("Failed to send registration response to client %d", client_sock);
     }
@@ -224,7 +224,7 @@ void handle_login(int client_sock, auth_payload *auth) {
         log_warn("Login failed for %s: %s", auth->username, res->error_message);
     }
 
-    ssize_t sent = ws_send_message(client_sock, &resp);
+    ssize_t sent = tcp_send_message(client_sock, &resp);
     if (sent <= 0) {
         log_error("Failed to send login response to client %d: %d", client_sock, sent);
     } else {
@@ -245,7 +245,7 @@ void handle_logout(int client_sock, message_t *msg) {
 
     message_t resp = {0};
     resp.type = MSG_AUTH_SUCCESS;
-    ws_send_message(client_sock, &resp);
+    tcp_send_message(client_sock, &resp);
 }
 
 
@@ -295,7 +295,7 @@ void handle_player_move(int client_sock, message_t *msg) {
     response.payload.move_res.game_over = result.game_over;
     response.payload.move_res.is_your_shot = 1;  // ✅ SHOOTER: is_your_shot = 1
     
-    ws_send_message(client_sock, &response);
+    tcp_send_message(client_sock, &response);
     log_info("✅ Sent MOVE_RESULT to shooter: hit=%d, sunk=%d, game_over=%d",
              result.is_hit, result.is_sunk, result.game_over);
     
@@ -317,7 +317,7 @@ void handle_player_move(int client_sock, message_t *msg) {
             opponent_msg.payload.move_res.game_over = result.game_over;
             opponent_msg.payload.move_res.is_your_shot = 0;  // ✅ DEFENDER: is_your_shot = 0
             
-            ws_send_message(opponent_sock, &opponent_msg);
+            tcp_send_message(opponent_sock, &opponent_msg);
             log_info("✅ Sent MOVE_RESULT to opponent (socket %d)", opponent_sock);
         } else {
             log_warn("Opponent socket not found for game %s", move->game_id);
@@ -337,7 +337,7 @@ void handle_chat(int client_sock, chat_payload *chat, const char *token) {
         message_t resp = {0};
         resp.type = MSG_AUTH_FAILED;
         strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
-        ws_send_message(client_sock, &resp);
+        tcp_send_message(client_sock, &resp);
         return;
     }
     
@@ -368,7 +368,7 @@ int check_token(int client_sock, const char *token, auth_user_t *out_user) {
         resp.type = MSG_AUTH_FAILED;
         strncpy(resp.payload.auth_fail.reason, "Invalid or expired token", 63);
         resp.payload.auth_fail.reason[63] = '\0';
-        ws_send_message(client_sock, &resp);
+        tcp_send_message(client_sock, &resp);
 
         return 0; // không hợp lệ
     }
@@ -388,7 +388,7 @@ void handle_join_queue(int client_sock, const char *token) {
         message_t resp = {0};
         resp.type = MSG_AUTH_FAILED;
         strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
-        ws_send_message(client_sock, &resp);
+        tcp_send_message(client_sock, &resp);
         return;
     }
     
@@ -414,7 +414,7 @@ void handle_join_queue(int client_sock, const char *token) {
         // Send confirmation (optional)
         // message_t resp = {0};
         // resp.type = MSG_QUEUE_JOINED;
-        // ws_send_message(client_sock, &resp);
+        // tcp_send_message(client_sock, &resp);
     } else {
         log_error("Failed to add player %s to queue", user->username);
     }
@@ -441,7 +441,7 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
         message_t resp = {0};
         resp.type = MSG_AUTH_FAILED;
         strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
-        ws_send_message(client_sock, &resp);
+        tcp_send_message(client_sock, &resp);
         return;
     }
     
@@ -456,7 +456,7 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
         message_t resp = {0};
         resp.type = MSG_AUTH_FAILED;
         strncpy(resp.payload.auth_fail.reason, "No active game", 63);
-        ws_send_message(client_sock, &resp);
+        tcp_send_message(client_sock, &resp);
         
         free(user_id);
         return;
@@ -476,7 +476,7 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
             message_t resp = {0};
             resp.type = MSG_AUTH_FAILED;
             strncpy(resp.payload.auth_fail.reason, "Invalid ship type", 63);
-            ws_send_message(client_sock, &resp);
+            tcp_send_message(client_sock, &resp);
             
             free(user_id);
             return;
@@ -509,14 +509,14 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
                     strcmp(game->player1_id, user_id) == 0 ? game->player2_id : game->player1_id,
                     31);
             
-            ws_send_message(client_sock, &start_msg);
+            tcp_send_message(client_sock, &start_msg);
             
             // Send to opponent
             int opponent_sock = (strcmp(game->player1_id, user_id) == 0) ?
                                 game->player2_socket : game->player1_socket;
             if (opponent_sock > 0) {
                 strncpy(start_msg.payload.start_game.opponent, user_id, 31);
-                ws_send_message(opponent_sock, &start_msg);
+                tcp_send_message(opponent_sock, &start_msg);
             }
         }
     } else {
@@ -525,7 +525,7 @@ void handle_place_ship(int client_sock, place_ship_payload *payload, const char 
         log_warn("Failed to place ship for player %s", user_id);
     }
     
-    ws_send_message(client_sock, &resp);
+    tcp_send_message(client_sock, &resp);
     free(user_id);
 }
 
@@ -559,7 +559,7 @@ void handle_get_online_players(int client_sock, const char *token) {
         message_t resp = {0};
         resp.type = MSG_AUTH_FAILED;
         strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
-        ws_send_message(client_sock, &resp);
+        tcp_send_message(client_sock, &resp);
         return;
     }
     
@@ -593,7 +593,7 @@ void handle_get_online_players(int client_sock, const char *token) {
     }
     
     // Send response
-    ssize_t sent = ws_send_message(client_sock, &resp);
+    ssize_t sent = tcp_send_message(client_sock, &resp);
     if (sent <= 0) {
         log_error("Failed to send online players list to client %d", client_sock);
     } else {
@@ -651,7 +651,7 @@ void handle_challenge_player(int client_sock, challenge_payload *payload, const 
         error_msg.type = MSG_AUTH_FAILED;
         snprintf(error_msg.payload.auth_fail.reason, 63, 
                  "%s is not online", target->username);
-        ws_send_message(client_sock, &error_msg);
+        tcp_send_message(client_sock, &error_msg);
         
         user_free(challenger);
         user_free(target);
@@ -705,7 +705,7 @@ void handle_challenge_player(int client_sock, challenge_payload *payload, const 
     challenge_session_t *c = challenge_get(challenge_id);
     recv_msg.payload.challenge_recv.expires_at = c->expires_at;
     
-    ws_send_message(target_sock, &recv_msg);
+    tcp_send_message(target_sock, &recv_msg);
     
     log_info("Challenge sent: %s → %s (ID: %s)", 
              challenger->username, target->username, challenge_id);
@@ -767,14 +767,14 @@ void handle_challenge_accept(int client_sock, challenge_response_payload *payloa
     strncpy(start_msg1.payload.start_game.game_id, game_id, 63);
     strncpy(start_msg1.payload.start_game.opponent, 
             target ? target->username : c->target_id, 31);
-    ws_send_message(c->challenger_socket, &start_msg1);
+    tcp_send_message(c->challenger_socket, &start_msg1);
     
     message_t start_msg2 = {0};
     start_msg2.type = MSG_START_GAME;
     strncpy(start_msg2.payload.start_game.game_id, game_id, 63);
     strncpy(start_msg2.payload.start_game.opponent, 
             challenger ? challenger->username : c->challenger_id, 31);
-    ws_send_message(c->target_socket, &start_msg2);
+    tcp_send_message(c->target_socket, &start_msg2);
     
     log_info("Challenge accepted, game started: %s", game_id);
     
@@ -811,7 +811,7 @@ void handle_challenge_decline(int client_sock, challenge_response_payload *paylo
     decline_msg.type = MSG_CHALLENGE_DECLINED;
     strncpy(decline_msg.payload.challenge_resp.challenge_id, 
             payload->challenge_id, 64);
-    ws_send_message(c->challenger_socket, &decline_msg);
+    tcp_send_message(c->challenger_socket, &decline_msg);
     
     log_info("Challenge declined: %s", payload->challenge_id);
     
@@ -843,7 +843,7 @@ void handle_challenge_cancel(int client_sock, challenge_response_payload *payloa
     cancel_msg.type = MSG_CHALLENGE_CANCELLED;
     strncpy(cancel_msg.payload.challenge_resp.challenge_id, 
             payload->challenge_id, 64);
-    ws_send_message(c->target_socket, &cancel_msg);
+    tcp_send_message(c->target_socket, &cancel_msg);
     
     log_info("Challenge cancelled: %s", payload->challenge_id);
     

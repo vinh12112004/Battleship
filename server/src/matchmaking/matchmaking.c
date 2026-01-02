@@ -1,6 +1,6 @@
 #include "matchmaking/matcher.h"
 #include "game/game.h"
-#include "network/ws_protocol.h"
+#include "network/tcp_protocol.h"
 #include "utils/logger.h"
 #include <stdlib.h>
 #include <string.h>
@@ -131,13 +131,13 @@ void matcher_find_match() {
             msg1.type = MSG_START_GAME;
             strncpy(msg1.payload.start_game.opponent, p2->user_id, 31);
             strncpy(msg1.payload.start_game.game_id, game_id, 63);
-            ws_send_message(p1->socket, &msg1);
+            tcp_send_message(p1->socket, &msg1);
             
             message_t msg2 = {0};
             msg2.type = MSG_START_GAME;
             strncpy(msg2.payload.start_game.opponent, p1->user_id, 31);
             strncpy(msg2.payload.start_game.game_id, game_id, 63);
-            ws_send_message(p2->socket, &msg2);
+            tcp_send_message(p2->socket, &msg2);
             
             log_info("Game started: %s", game_id);
             
