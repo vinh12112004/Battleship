@@ -198,8 +198,9 @@ class TCPMessage:
         
         # AUTH_SUCCESS
         if msg_type == MessageType.MSG_AUTH_SUCCESS:
-            username = read_cstring(0, 32)
-            return {'username': username}
+            token = read_cstring(0, 512)
+            username = read_cstring(512, 32)
+            return {'token': token, 'username': username}
         
         # AUTH_FAILED
         elif msg_type == MessageType.MSG_AUTH_FAILED:

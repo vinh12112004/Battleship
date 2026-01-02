@@ -67,9 +67,10 @@ class OnlinePlayersWidget(QWidget):
     
     challenge_player = pyqtSignal(str, str)  # username, user_id
     
-    def __init__(self, tcp_client):
+    def __init__(self, tcp_client, current_username):
         super().__init__()
         self.tcp_client = tcp_client
+        self.current_username = current_username
         self.player_cards = []
         
         self.init_ui()
@@ -110,8 +111,8 @@ class OnlinePlayersWidget(QWidget):
         
         # Add new cards
         for player in players:
-            if player['username'] == self.tcp_client.username:
-                continue  # Skip self
+            if player['username'] == self.current_username:
+                continue
             
             card = PlayerCard(
                 player['username'],

@@ -18,6 +18,8 @@ class LoginWindow(QWidget):
         self.token = None
         
         self.init_ui()
+        self._handler_success = self.sig_auth_success.emit
+        self._handler_failed = self.sig_auth_failed.emit
         self.setup_handlers()
         self.sig_auth_success.connect(self.handle_auth_success_ui)
         self.sig_auth_failed.connect(self.handle_auth_failed_ui)
@@ -144,8 +146,8 @@ class LoginWindow(QWidget):
     
     def setup_handlers(self):
         """Setup message handlers"""
-        self.tcp_client.on_message(MessageType.MSG_AUTH_SUCCESS, self.on_auth_success)
-        self.tcp_client.on_message(MessageType.MSG_AUTH_FAILED, self.on_auth_failed)
+        self.tcp_client.on_message(MessageType.MSG_AUTH_SUCCESS, self._handler_success)
+        self.tcp_client.on_message(MessageType.MSG_AUTH_FAILED, self._handler_failed)
     
     def login(self):
         """Handle login button click"""
@@ -215,23 +217,6 @@ class LoginWindow(QWidget):
         else:
             self.show_error("Failed to send register request")
     
-    def on_auth_success(self, payload):
-        """Handle successful authentication"""
-        token = payload.get('token', '')
-        username = payload.get('username', '')
-        
-        logger.info(f"Login successful: {username}")
-        
-        self.token = token
-        self.login_success.emit(username, token)
-        self.close()
-    
-    def on_auth_failed(self, payload):
-        """Handle failed authentication"""
-        reason = payload.get('reason', 'Unknown error')
-        logger.warning(f"Login failed: {reason}")
-        self.show_error(f"Authentication failed: {reason}")
-    
     def show_error(self, message: str):
         """Show error message"""
         self.status_label.setText(message)
@@ -256,3 +241,16 @@ class LoginWindow(QWidget):
     def handle_auth_failed_ui(self, payload):
         reason = payload.get('reason', 'Unknown error')
         self.show_error(f"Authentication failed: {reason}")
+        
+    def closeEvent(self, event):
+        """Dọn dẹp handler khi đóng cửa sổ"""
+        try:
+            # Gỡ bỏ chính xác cái hàm đã đăng ký
+            self.tcp_client.off_message(MessageType.MSG_AUTH_SUCCESS, self._handler_success)
+            self.tcp_client.off_message(MessageType.MSG_AUTH_FAILED, self._handler_failed)
+            logger.debug("LoginWindow handlers removed cleanly")
+        except Exception as e:
+            logger.error(f"Error removing login handlers: {e}")
+        
+        # Chấp nhận đóng cửa sổ
+        event.accept()

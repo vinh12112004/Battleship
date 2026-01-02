@@ -77,11 +77,15 @@ class BattleshipApp:
         """Handle successful login"""
         self.username = username
         self.tcp_client.token = token
+        if self.tcp_client:
+            self.tcp_client.token = token
+            logger.info(f"Token saved to TCP Client: {token[:15]}...")
+            
         logger.info(f"Logged in as {username}")
         
         # Tạo Dashboard và chuyển cảnh
         dashboard = DashboardWindow(self.tcp_client, self.username)
-        dashboard.start_game.connect(self.on_game_start)
+        dashboard.start_game_signal.connect(self.on_game_start)
         self.switch_to_window(dashboard)
     
     def on_game_start(self, game_id, opponent):

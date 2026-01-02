@@ -155,7 +155,7 @@ class DashboardWindow(QMainWindow):
         title.setStyleSheet(f"color: {COLORS['primary']};")
         layout.addWidget(title)
         
-        self.players_widget = OnlinePlayersWidget(self.tcp_client)
+        self.players_widget = OnlinePlayersWidget(self.tcp_client, self.username)
         self.players_widget.challenge_player.connect(self.send_challenge)
         layout.addWidget(self.players_widget)
         
@@ -275,7 +275,17 @@ class DashboardWindow(QMainWindow):
                 self.queue_status.setText("")
 
     def refresh_online_players(self):
-        msg = TCPMessage(type=MessageType.MSG_GET_ONLINE_PLAYERS, payload={}, token=self.tcp_client.token)
+        current_token = self.tcp_client.token 
+        
+        if not current_token:
+            logger.warning("Token is empty, cannot refresh players")
+            return
+
+        msg = TCPMessage(
+            type=MessageType.MSG_GET_ONLINE_PLAYERS, 
+            payload={}, 
+            token=current_token
+        )
         self.tcp_client.send_message(msg)
 
     def send_challenge(self, target_username, target_id):
