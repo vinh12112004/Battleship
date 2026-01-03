@@ -1,7 +1,10 @@
 import struct
+import logging
 from enum import IntEnum
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 class MessageType(IntEnum):
     MSG_REGISTER = 1
@@ -212,24 +215,44 @@ class TCPMessage:
             opponent = read_cstring(0, 32)
             game_id = read_cstring(32, 64)
             current_turn = read_cstring(96, 32)
-            return {'opponent': opponent, 'game_id': game_id, 'current_turn': current_turn}
+                
+                # ✅ DEBUG
+            logger.info(f"[Protocol] Parsed START_GAME:")
+            logger.info(f"  opponent={opponent}")
+            logger.info(f"  game_id={game_id}")
+            logger.info(f"  current_turn={current_turn}")
+                
+            return {
+                    'opponent': opponent, 
+                    'game_id': game_id, 
+                    'current_turn': current_turn
+                }
         
         # MOVE_RESULT
         elif msg_type == MessageType.MSG_MOVE_RESULT:
-            # '<ii' = Little Endian ints
-            row, col = struct.unpack('<ii', data[0:8])
-            # '<BBI' = Little Endian unsigned char, unsigned char, unsigned int
-            is_hit, is_sunk, sunk_ship_type = struct.unpack('<BBI', data[8:13])
-            game_over, is_your_shot = struct.unpack('<BB', data[13:15])
-            return {
-                'row': row,
-                'col': col,
-                'is_hit': bool(is_hit),
-                'is_sunk': bool(is_sunk),
-                'sunk_ship_type': sunk_ship_type,
-                'game_over': bool(game_over),
-                'is_your_shot': bool(is_your_shot)
-            }
+            try:
+                # Read fields individually to avoid alignment issues
+                row = struct.unpack('<i', data[0:4])[0]
+                col = struct.unpack('<i', data[4:8])[0]
+                is_hit = data[8]
+                is_sunk = data[9]
+                sunk_ship_type = struct.unpack('<i', data[10:14])[0]
+                game_over = data[14]
+                is_your_shot = data[15]
+                
+                return {
+                    'row': row,
+                    'col': col,
+                    'is_hit': bool(is_hit),
+                    'is_sunk': bool(is_sunk),
+                    'sunk_ship_type': sunk_ship_type,
+                    'game_over': bool(game_over),
+                    'is_your_shot': bool(is_your_shot)
+                }
+            except Exception as e:
+                logger.error(f"Failed to parse MOVE_RESULT: {e}")
+                logger.error(f"Data length: {len(data)}, first 20 bytes: {data[:20].hex()}")
+                return {}
         
         # CHAT_MESSAGE
         elif msg_type == MessageType.MSG_CHAT_MESSAGE:
@@ -310,6 +333,22 @@ class TCPMessage:
             loser_id = read_cstring(64, 64)
             reason = read_cstring(128, 64)
             return {'winner_id': winner_id, 'loser_id': loser_id, 'reason': reason}
+        
+        elif msg_type == MessageType.MSG_GAME_OVER:
+            winner = read_cstring(0, 64)
+            loser = read_cstring(64, 64)
+            reason = read_cstring(128, 128)
+            
+            logger.info(f"[Protocol] Parsed GAME_OVER:")
+            logger.info(f"  winner={winner}")
+            logger.info(f"  loser={loser}")
+            logger.info(f"  reason={reason}")
+            
+            return {
+                'winner': winner,
+                'loser': loser,
+                'reason': reason
+            }
         
         else:
             return {}

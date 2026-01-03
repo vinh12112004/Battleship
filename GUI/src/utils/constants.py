@@ -6,11 +6,11 @@ CELL_SIZE = 40  # pixels for UI
 
 # Ships
 SHIP_TYPES = {
-    1: {"name": "Patrol Boat", "length": 2, "color": "#00d9ff"},
-    2: {"name": "Submarine", "length": 3, "color": "#9d4edd"},
-    3: {"name": "Destroyer", "length": 3, "color": "#fbbf24"},
-    4: {"name": "Battleship", "length": 4, "color": "#ff6b35"},
-    5: {"name": "Carrier", "length": 5, "color": "#00d084"},
+    5: {'name': 'Carrier', 'length': 5, 'color': '#4CAF50'},
+    4: {'name': 'Battleship', 'length': 4, 'color': '#2196F3'},
+    3: {'name': 'Destroyer', 'length': 3, 'color': '#FFC107'},
+    2: {'name': 'Submarine', 'length': 2, 'color': '#9C27B0'},
+    1: {'name': 'Patrol Boat', 'length': 1, 'color': '#795548'}
 }
 
 # Game states
@@ -24,9 +24,8 @@ class GameState:
 # Cell states
 class CellState:
     EMPTY = 0
-    SHIP = 1
-    HIT = 2
-    MISS = 3
+    HIT = 6
+    MISS = 7
 
 # Colors (matching web UI)
 COLORS = {
@@ -43,8 +42,8 @@ COLORS = {
     'warning': '#ffa502',
     'hit': '#ff4757',
     'miss': '#94a3b8',
-    'ship': '#00d084',
-    'water': '#1a2332',
+    'water': '#1e3a5f', 
+    'ship': '#00d9ff',
 }
 
 # Network

@@ -63,8 +63,7 @@ class GameStateManager:
                 idx = ship.row * GRID_SIZE + (ship.col + i)
             else:
                 idx = (ship.row + i) * GRID_SIZE + ship.col
-            
-            self.your_board[idx] = CellState.SHIP
+            self.your_board[idx] = ship.ship_type
         
         self.your_ships.append(ship)
         return True

@@ -21,9 +21,11 @@ class TCPClientBridge:
         self.lib.tcp_disconnect.argtypes = [ctypes.c_int]
         self.lib.tcp_disconnect.restype = ctypes.c_int
         
+        # ✅ FIX: tcp_send nhận buffer, không phải byref
         self.lib.tcp_send.argtypes = [ctypes.c_int, ctypes.c_void_p]
         self.lib.tcp_send.restype = ctypes.c_int
         
+        # ✅ FIX: tcp_recv nhận buffer, không phải byref
         self.lib.tcp_recv.argtypes = [ctypes.c_int, ctypes.c_void_p]
         self.lib.tcp_recv.restype = ctypes.c_int
         
@@ -37,7 +39,8 @@ class TCPClientBridge:
         self.recv_thread: Optional[threading.Thread] = None
         self.message_queue = queue.Queue()
         self.handlers: Dict[int, list] = {}
-        self.token = ""  # Khởi tạo token rỗng
+        self.token = ""
+        self.lock = threading.Lock()
         logger.info("TCP Client Bridge initialized")
     
     def connect(self, host: str = "127.0.0.1", port: int = 9090) -> bool:
@@ -91,11 +94,11 @@ class TCPClientBridge:
             # Serialize message to bytes
             data = msg.serialize()
             
-            # Create ctypes buffer
+            # ✅ FIX: Tạo buffer và truyền thẳng địa chỉ
             buffer = ctypes.create_string_buffer(data, len(data))
             
-            # Call C function
-            result = self.lib.tcp_send(self.sockfd, ctypes.byref(buffer))
+            # ✅ ĐÚNG: Truyền buffer trực tiếp (ctypes tự động convert sang void*)
+            result = self.lib.tcp_send(self.sockfd, buffer)
             
             if result < 0:
                 logger.error(f"Failed to send message type={msg.type}")
@@ -113,31 +116,30 @@ class TCPClientBridge:
         logger.info("Receive thread started")
 
         buffer_size = TCPMessage.MESSAGE_SIZE 
-        buffer = ctypes.create_string_buffer(buffer_size) 
         
         while self.running:
             try:
-                # Gọi hàm C, truyền buffer đã tạo sẵn vào
-                # Lưu ý: C sẽ ghi đè lên dữ liệu cũ trong buffer này -> OK
-                result = self.lib.tcp_recv(self.sockfd, ctypes.byref(buffer))
+                # ✅ FIX: Tạo buffer MỚI mỗi lần để tránh data corruption
+                buffer = ctypes.create_string_buffer(buffer_size)
+                
+                # ✅ ĐÚNG: Truyền buffer trực tiếp (không dùng byref)
+                result = self.lib.tcp_recv(self.sockfd, buffer)
                 
                 if result == 0:
-                    # Non-blocking: Không có dữ liệu
-                    time.sleep(0.01) 
+                    # Non-blocking: No data available
+                    time.sleep(0.01)
                     continue
                 
                 if result < 0:
-                    if result == -2: # Server đóng kết nối
+                    if result == -2:
                         logger.info("Server closed connection")
                         self.connected = False
                         break
-                    # Các lỗi khác
                     time.sleep(0.1)
                     continue
                 
-                # Có dữ liệu -> Parse
-                # buffer.raw lấy toàn bộ byte, nhưng chỉ lấy đúng số byte kích thước struct
-                data = buffer.raw[:buffer_size] 
+                # ✅ Parse data từ buffer
+                data = buffer.raw[:buffer_size]
                 msg = TCPMessage.deserialize(data)
                 
                 if msg:
@@ -145,33 +147,53 @@ class TCPClientBridge:
                     
             except Exception as e:
                 logger.error(f"Receive loop error: {e}")
+                import traceback
+                traceback.print_exc()
                 time.sleep(0.1)
+        
+        logger.info("Receive thread stopped")
     
     def _handle_message(self, msg: TCPMessage):
         """Dispatch message to registered handlers"""
-        msg_type = msg.type.value
-        
-        if msg_type in self.handlers:
-            for handler in self.handlers[msg_type]:
+        try:
+            msg_type = msg.type.value
+            
+            handlers_to_call = []
+            with self.lock:
+                if msg_type in self.handlers:
+                    handlers_to_call = self.handlers[msg_type][:]
+            
+            for handler in handlers_to_call:
                 try:
                     handler(msg.payload)
                 except Exception as e:
                     logger.error(f"Handler error for type={msg.type.name}: {e}")
+                    import traceback
+                    traceback.print_exc()
+        except Exception as e:
+            logger.error(f"_handle_message error: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_message(self, msg_type: MessageType, handler: Callable):
         """Register message handler"""
         type_val = msg_type.value
         
-        if type_val not in self.handlers:
-            self.handlers[type_val] = []
+        with self.lock:
+            if type_val not in self.handlers:
+                self.handlers[type_val] = []
+            self.handlers[type_val].append(handler)
         
-        self.handlers[type_val].append(handler)
         logger.debug(f"Registered handler for {msg_type.name}")
     
     def off_message(self, msg_type: MessageType, handler: Callable):
         """Unregister message handler"""
         type_val = msg_type.value
         
-        if type_val in self.handlers and handler in self.handlers[type_val]:
-            self.handlers[type_val].remove(handler)
-            logger.debug(f"Unregistered handler for {msg_type.name}")
+        with self.lock:
+            if type_val in self.handlers:
+                if handler in self.handlers[type_val]:
+                    self.handlers[type_val].remove(handler)
+                    logger.debug(f"Unregistered handler for {msg_type.name}")
+                else:
+                    logger.warning(f"Handler not found for {msg_type.name} to remove")
