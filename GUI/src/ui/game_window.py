@@ -15,7 +15,9 @@ class GameWindow(QMainWindow):
     sig_move_result = pyqtSignal(dict)
     sig_game_over = pyqtSignal(dict)
     sig_turn_warning = pyqtSignal(dict)
+    sig_game_timeout = pyqtSignal(dict)
     sig_start_game = pyqtSignal(dict)
+    game_finished = pyqtSignal()
     
     def __init__(self, tcp_client, username, game_id, opponent, current_turn, board_state=None):
         super().__init__()
@@ -296,6 +298,7 @@ class GameWindow(QMainWindow):
         self.sig_move_result.connect(self.handle_move_result_ui)
         self.sig_game_over.connect(self.handle_game_over_ui)
         self.sig_turn_warning.connect(self.handle_turn_warning_ui)
+        self.sig_game_timeout.connect(self.handle_game_timeout_ui)
 
     def setup_handlers(self):
         # Store references
@@ -303,12 +306,14 @@ class GameWindow(QMainWindow):
         self._h_move = lambda payload: self.sig_move_result.emit(payload)
         self._h_game_over = lambda payload: self.sig_game_over.emit(payload)
         self._h_warning = lambda payload: self.sig_turn_warning.emit(payload)
+        self._h_timeout = lambda payload: self.sig_game_timeout.emit(payload)
 
         # Register
         self.tcp_client.on_message(MessageType.MSG_START_GAME, self._h_start)
         self.tcp_client.on_message(MessageType.MSG_MOVE_RESULT, self._h_move)
         self.tcp_client.on_message(MessageType.MSG_GAME_OVER, self._h_game_over)
         self.tcp_client.on_message(MessageType.MSG_TURN_WARNING, self._h_warning)
+        self.tcp_client.on_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
         
     def closeEvent(self, event):
         try:
@@ -316,6 +321,8 @@ class GameWindow(QMainWindow):
             self.tcp_client.off_message(MessageType.MSG_MOVE_RESULT, self._h_move)
             self.tcp_client.off_message(MessageType.MSG_GAME_OVER, self._h_game_over)
             self.tcp_client.off_message(MessageType.MSG_TURN_WARNING, self._h_warning)
+            self.tcp_client.off_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
+            self.tcp_client.off_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
             
             if hasattr(self.chat_widget, 'close'):
                 self.chat_widget.close()
@@ -432,26 +439,32 @@ class GameWindow(QMainWindow):
             self.update_turn_indicator()
             self.update_opponent_board_state()
             
-    def show_game_over_dialog(self, you_won):
-        """✅ Hiển thị dialog game over"""
-        if you_won:
-            result = QMessageBox.information(
-                self, 
-                "Victory!", 
-                f"{self.TROPHY} Congratulations!\n\nYou defeated {self.opponent}!",
-                QMessageBox.StandardButton.Ok
-            )
-        else:
-            result = QMessageBox.information(
-                self, 
-                "Defeat", 
-                f"{self.SKULL} Game Over\n\n{self.opponent} won the battle.",
-                QMessageBox.StandardButton.Ok
-            )
-        
-        # ✅ Đóng window sau khi đóng dialog
-        logger.info("[GameWindow] Closing window after game over")
-        QTimer.singleShot(300, self.close)
+    def show_game_over_dialog(self, you_won, reason=""):  # <--- THÊM reason="" VÀO ĐÂY
+            """Hiển thị dialog và emit signal về Dashboard"""
+            logger.info("[GameWindow] Showing Game Over Dialog...")
+            
+            msg_text = ""
+            if reason:
+                msg_text += f"Reason: {reason}\n\n"
+                
+            if you_won:
+                title = "VICTORY!"
+                msg_text += f"CONGRATULATIONS!\nYOU WON THE BATTLE!"
+                icon = QMessageBox.Icon.Information
+            else:
+                title = "DEFEAT"
+                msg_text += f"MISSION FAILED.\nYour fleet was destroyed or Time Out."
+                icon = QMessageBox.Icon.Critical
+                
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle(title)
+            msg_box.setText(msg_text)
+            msg_box.setIcon(icon)
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
+            
+            logger.info("[GameWindow] Dialog closed. Emitting game_finished signal...")
+            self.game_finished.emit()
 
     def update_opponent_board_state(self):
         """✅ Enable/disable opponent cells"""
@@ -500,13 +513,31 @@ class GameWindow(QMainWindow):
             )
         
         # ✅ Close window and return to dashboard
-        logger.info("[GameWindow] Closing window after game over")
-        QTimer.singleShot(500, self.close)
+        logger.info("[GameWindow] Emitting game_finished signal (from MSG_GAME_OVER)...")
+        self.game_finished.emit()
 
     def handle_turn_warning_ui(self, payload):
         sec = payload.get('seconds_remaining', 0)
         self.turn_indicator.setText(f"{self.WARNING} {sec}s LEFT!")
         self.turn_indicator.setStyleSheet(f"background-color: {COLORS['error']}; color: white; padding: 12px; border-radius: 8px;")
+        
+    def handle_game_timeout_ui(self, payload):
+        winner = payload.get('winner', '')
+        logger.info(f"[GameWindow] MSG_GAME_TIMEOUT (Type 29): Winner={winner}")
+        self.game_ended = True
+        self.centralWidget().setEnabled(False)
+        is_winner = (winner == self.username)
+        if self.is_my_turn:
+            # Đang lượt mình mà hết giờ -> Mình Thua
+            is_winner = False
+            reason_msg = "You ran out of time!\nNext time, be faster."
+            logger.info("-> Decision: I LOST (My turn timed out)")
+        else:
+            # Đang lượt địch mà hết giờ -> Mình Thắng
+            is_winner = True
+            reason_msg = "Opponent ran out of time!\nYou acted fast enough."
+            logger.info("-> Decision: I WON (Opponent timed out)")
+        QTimer.singleShot(100, lambda: self.show_game_over_dialog(is_winner, reason_msg))
 
     def update_turn_indicator(self):
         if self.is_my_turn:
@@ -535,7 +566,7 @@ class GameWindow(QMainWindow):
     def resign(self):
         reply = QMessageBox.question(self, "Resign", "Are you sure?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            self.close()
+            self.game_finished.emit()
 
     def apply_dark_theme(self):
         palette = QPalette()

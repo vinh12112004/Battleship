@@ -134,13 +134,26 @@ class BattleshipApp:
             current_turn,
             board_state=board_state 
         )
-        
+        game_window.game_finished.connect(self.return_to_dashboard)
         # Set board state vào GameWindow
         if board_state:
             game_window.game_state.your_board = board_state
             logger.info(f"[Main] Set your_board to GameWindow")
         
         self.switch_to_window(game_window)
+        
+    def return_to_dashboard(self):
+        """Quay trở lại màn hình Dashboard"""
+        logger.info("[Main] Returning to Dashboard...")
+        try:
+            # Tạo dashboard mới
+            dashboard = DashboardWindow(self.tcp_client, self.username)
+            # Kết nối lại các tín hiệu của dashboard (start game, v.v...)
+            dashboard.start_game_signal.connect(self.on_game_start) # Hoặc hàm xử lý start game của bạn
+            
+            self.switch_to_window(dashboard)
+        except Exception as e:
+            logger.error(f"Error returning to dashboard: {e}")
     
     def show_game(self, opponent):
         """Show game window"""
