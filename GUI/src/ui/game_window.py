@@ -11,26 +11,47 @@ from .chat_widget import ChatWidget
 class GameWindow(QMainWindow):
     """Main game window with boards and chat"""
     
-    # 1. SIGNALS: Định nghĩa tín hiệu để giao tiếp Thread an toàn
+    # Signals
     sig_move_result = pyqtSignal(dict)
     sig_game_over = pyqtSignal(dict)
     sig_turn_warning = pyqtSignal(dict)
+    sig_game_timeout = pyqtSignal(dict)
+    sig_start_game = pyqtSignal(dict)
+    game_finished = pyqtSignal()
     
-    def __init__(self, tcp_client, username, game_id, opponent):
+    def __init__(self, tcp_client, username, game_id, opponent, current_turn, board_state=None):
         super().__init__()
         self.tcp_client = tcp_client
         self.username = username
         self.game_id = game_id
         self.opponent = opponent
         
-        # Game State (Dữ liệu cục bộ)
         self.game_state = GameStateManager()
         self.game_state.game_id = game_id
         self.game_state.opponent = opponent
         
-        # Lưu tham chiếu đến các nút bấm (Button) trên bàn cờ để update màu sau này
-        self.your_cells = {}      # (row, col) -> QPushButton
-        self.opponent_cells = {}  # (row, col) -> QPushButton
+        if board_state:
+            self.game_state.your_board = board_state
+            logger.info(f"[GameWindow] Loaded board state with {sum(1 for x in board_state if x > 0)} ship cells")
+        
+        self.is_my_turn = (current_turn == self.username)
+        self.game_ended = False
+        
+        # Cell references
+        self.your_cells = {}
+        self.opponent_cells = {}
+        
+        # Unicode icons
+        self.FIRE = "🔥"
+        self.WATER = "💧"
+        self.SHIP = "🚢"
+        self.TARGET = "🎯"
+        self.HOURGLASS = "⏳"
+        self.TROPHY = "🏆"
+        self.SKULL = "💀"
+        self.WARNING = "⚠️"
+        self.SHIELD = "🛡️"
+        self.CHART = "📊"
         
         self.setWindowTitle(f"⚓ Battleship - {username} vs {opponent}")
         self.setGeometry(50, 50, 1400, 900)
@@ -40,7 +61,11 @@ class GameWindow(QMainWindow):
         self.setup_handlers()
         self.apply_dark_theme()
         
-        logger.info(f"Game window opened: {game_id}")
+        self.update_turn_indicator()
+        # Gọi update lần đầu để đảm bảo trạng thái đúng
+        self.update_opponent_board_state()
+        
+        logger.info(f"[GameWindow] Initialized for game {game_id}")
     
     def init_ui(self):
         """Initialize UI components"""
@@ -55,24 +80,20 @@ class GameWindow(QMainWindow):
         header = self.create_header()
         main_layout.addWidget(header)
         
-        # Main game area (Boards + Chat)
+        # Main game area
         game_layout = QHBoxLayout()
         
-        # Left: Your board
-        your_board_panel = self.create_board_panel("🛡️ Your Fleet", is_your_board=True)
+        your_board_panel = self.create_board_panel(f"{self.SHIELD} Your Fleet", is_your_board=True)
         game_layout.addWidget(your_board_panel, stretch=2)
         
-        # Center: Opponent board
-        opponent_board_panel = self.create_board_panel("🎯 Enemy Waters", is_your_board=False)
+        opponent_board_panel = self.create_board_panel(f"{self.TARGET} Enemy Waters", is_your_board=False)
         game_layout.addWidget(opponent_board_panel, stretch=2)
         
-        # Right: Info + Chat
         right_panel = self.create_right_panel()
         game_layout.addWidget(right_panel, stretch=1)
         
         main_layout.addLayout(game_layout)
         
-        # Footer with stats
         footer = self.create_footer()
         main_layout.addWidget(footer)
     
@@ -86,16 +107,34 @@ class GameWindow(QMainWindow):
         
         layout.addStretch()
         
-        self.turn_indicator = QLabel("⏳ Waiting...")
-        self.turn_indicator.setFont(QFont("Arial", 18, QFont.Weight.Bold))
-        self.update_turn_indicator_ui(False) # Default state
+        # Turn indicator
+        self.turn_indicator = QLabel(f"{self.HOURGLASS} Waiting for game to start...")
+        self.turn_indicator.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        self.turn_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.turn_indicator.setFixedHeight(60)
+        self.turn_indicator.setStyleSheet(f"""
+            QLabel {{
+                background-color: {COLORS['card']};
+                color: {COLORS['foreground']};
+                padding: 12px 20px;
+                border-radius: 8px;
+                border: 2px solid {COLORS['border']};
+            }}
+        """)
         layout.addWidget(self.turn_indicator)
         
         layout.addStretch()
         
         resign_btn = QPushButton("🏳️ Resign")
         resign_btn.setStyleSheet(f"""
-            QPushButton {{ background-color: {COLORS['error']}; color: white; border: none; border-radius: 8px; padding: 10px 20px; font-weight: bold; }}
+            QPushButton {{ 
+                background-color: {COLORS['error']}; 
+                color: white; 
+                border: none; 
+                border-radius: 8px; 
+                padding: 10px 20px; 
+                font-weight: bold; 
+            }}
             QPushButton:hover {{ background-color: #ff6b6b; }}
         """)
         resign_btn.clicked.connect(self.resign)
@@ -135,17 +174,66 @@ class GameWindow(QMainWindow):
             for col in range(GRID_SIZE):
                 cell = QPushButton("")
                 cell.setFixedSize(45, 45)
-                cell.setStyleSheet(f"""
-                    QPushButton {{ background-color: {COLORS['water']}; border: 1px solid {COLORS['border']}; color: white; font-size: 20px; }}
-                    QPushButton:hover {{ background-color: {COLORS['primary']}; }}
-                """)
+                cell.setFont(QFont("Arial", 18))
+                
+                # Base style
+                base_style = f"""
+                    QPushButton {{ 
+                        background-color: {COLORS['water']}; 
+                        border: 1px solid {COLORS['border']}; 
+                        color: white; 
+                        font-size: 20px; 
+                    }}
+                """
+                cell_id = f"cell_{row}_{col}_{'me' if is_your_board else 'opp'}"
+                cell.setObjectName(cell_id)
                 
                 if not is_your_board:
-                    # Chỉ cho phép click vào bàn cờ đối thủ
-                    cell.clicked.connect(lambda _, r=row, c=col: self.on_opponent_cell_click(r, c))
+                    # Opponent board: clickable
+                    # ✅ Removed 'transform' to fix logs
+                    cell.setStyleSheet(base_style + f"""
+                        QPushButton#{cell_id}:hover:enabled {{ 
+                            background-color: #FF4444; 
+                            border: 3px solid white;
+                        }}
+                        QPushButton#{cell_id}:pressed:enabled {{
+                            background-color: #CC0000;
+                        }}
+                        QPushButton#{cell_id}:disabled {{
+                            background-color: {COLORS['water']};
+                            opacity: 1.0;
+                        }}
+                    """)
+                
+                    cell.clicked.connect(lambda checked=False, r=row, c=col: self.on_opponent_cell_click(r, c))
+                    self.opponent_cells[(row, col)] = cell
+                    
+                    # ✅ LUÔN ENABLE BAN ĐẦU
+                    cell.setEnabled(True)
                 else:
-                    # Bàn cờ của mình thì không click được (chỉ hiển thị)
+                    # Your board: show ships
                     cell.setEnabled(False)
+                    
+                    cell_value = self.game_state.your_board[row * GRID_SIZE + col]
+                    if 1 <= cell_value <= 5: 
+                        cell.setText(self.SHIP)
+                        # Lấy màu theo loại tàu để đẹp hơn (Optional)
+                        ship_color = SHIP_TYPES.get(cell_value, {}).get('color', COLORS['primary'])
+                        
+                        cell.setStyleSheet(base_style + f"""
+                            QPushButton {{
+                                background-color: {ship_color};
+                                border: 2px solid {COLORS['accent']};
+                            }}
+                        """)
+                    elif cell_value == 6: # HIT (nếu bạn định nghĩa HIT=6)
+                        cell.setText(self.FIRE)
+                        # ... style hit ...
+                    elif cell_value == 7: # MISS (nếu bạn định nghĩa MISS=7)
+                        cell.setText(self.WATER)
+                        # ... style miss ...
+                    else:
+                        cell.setStyleSheet(base_style)
                 
                 grid_layout.addWidget(cell, row + 1, col + 1)
                 
@@ -165,30 +253,29 @@ class GameWindow(QMainWindow):
         stats_widget.setStyleSheet(f"background-color: {COLORS['card']}; border: 2px solid {COLORS['border']}; border-radius: 8px; padding: 15px;")
         stats_layout = QVBoxLayout(stats_widget)
         
-        stats_title = QLabel("📊 Game Statistics")
+        stats_title = QLabel(f"{self.CHART} Game Statistics")
         stats_title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         stats_title.setStyleSheet(f"color: {COLORS['primary']};")
         stats_layout.addWidget(stats_title)
         
-        self.your_hits_label = QLabel("Your Hits: 0")
-        self.your_hits_label.setStyleSheet(f"color: {COLORS['success']};")
+        self.your_hits_label = QLabel(f"{self.FIRE} Your Hits: 0")
+        self.your_hits_label.setStyleSheet(f"color: {COLORS['success']}; font-size: 12px;")
         stats_layout.addWidget(self.your_hits_label)
         
-        self.your_misses_label = QLabel("Your Misses: 0")
-        self.your_misses_label.setStyleSheet(f"color: {COLORS['miss']};")
+        self.your_misses_label = QLabel(f"{self.WATER} Your Misses: 0")
+        self.your_misses_label.setStyleSheet(f"color: {COLORS['foreground']}; font-size: 12px;")
         stats_layout.addWidget(self.your_misses_label)
         
-        self.opponent_hits_label = QLabel(f"{self.opponent} Hits: 0")
-        self.opponent_hits_label.setStyleSheet(f"color: {COLORS['error']};")
+        self.opponent_hits_label = QLabel(f"{self.FIRE} Opponent Hits: 0")
+        self.opponent_hits_label.setStyleSheet(f"color: {COLORS['error']}; font-size: 12px;")
         stats_layout.addWidget(self.opponent_hits_label)
         
-        self.opponent_misses_label = QLabel(f"{self.opponent} Misses: 0")
-        self.opponent_misses_label.setStyleSheet(f"color: {COLORS['miss']};")
+        self.opponent_misses_label = QLabel(f"{self.WATER} Opponent Misses: 0")
+        self.opponent_misses_label.setStyleSheet(f"color: {COLORS['foreground']}; font-size: 12px;")
         stats_layout.addWidget(self.opponent_misses_label)
         
         layout.addWidget(stats_widget)
         
-        # Chat Widget (Giả định class ChatWidget đã handle thread safe của riêng nó hoặc không cần)
         self.chat_widget = ChatWidget(self.tcp_client, self.game_id)
         layout.addWidget(self.chat_widget, stretch=1)
         
@@ -197,75 +284,88 @@ class GameWindow(QMainWindow):
     def create_footer(self):
         footer = QWidget()
         layout = QHBoxLayout(footer)
-        self.ships_label = QLabel("Ships Status: Active")
+        self.ships_label = QLabel(f"{self.SHIP} Ships Status: Active")
         self.ships_label.setStyleSheet(f"color: {COLORS['success']}; font-size: 14px;")
         layout.addWidget(self.ships_label)
         return footer
 
     # =========================================================================
-    # 2. SIGNAL CONNECTIONS & CLEANUP
+    # SIGNAL CONNECTIONS
     # =========================================================================
 
     def connect_signals_to_slots(self):
-        """Kết nối tín hiệu vào các hàm xử lý UI"""
+        self.sig_start_game.connect(self.handle_start_game_ui)
         self.sig_move_result.connect(self.handle_move_result_ui)
         self.sig_game_over.connect(self.handle_game_over_ui)
         self.sig_turn_warning.connect(self.handle_turn_warning_ui)
+        self.sig_game_timeout.connect(self.handle_game_timeout_ui)
 
     def setup_handlers(self):
-        """Đăng ký wrapper để gửi signal khi có tin nhắn"""
-        # Lưu lại function object để dùng cho off_message
-        self._h_move = self.sig_move_result.emit
-        self._h_game_over = self.sig_game_over.emit
-        self._h_warning = self.sig_turn_warning.emit
+        # Store references
+        self._h_start = lambda payload: self.sig_start_game.emit(payload)
+        self._h_move = lambda payload: self.sig_move_result.emit(payload)
+        self._h_game_over = lambda payload: self.sig_game_over.emit(payload)
+        self._h_warning = lambda payload: self.sig_turn_warning.emit(payload)
+        self._h_timeout = lambda payload: self.sig_game_timeout.emit(payload)
 
+        # Register
+        self.tcp_client.on_message(MessageType.MSG_START_GAME, self._h_start)
         self.tcp_client.on_message(MessageType.MSG_MOVE_RESULT, self._h_move)
         self.tcp_client.on_message(MessageType.MSG_GAME_OVER, self._h_game_over)
         self.tcp_client.on_message(MessageType.MSG_TURN_WARNING, self._h_warning)
-
+        self.tcp_client.on_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
+        
     def closeEvent(self, event):
-        """Dọn dẹp handler khi đóng cửa sổ"""
-        logger.info(f"Closing GameWindow {self.game_id}, cleaning up handlers...")
         try:
+            self.tcp_client.off_message(MessageType.MSG_START_GAME, self._h_start)
             self.tcp_client.off_message(MessageType.MSG_MOVE_RESULT, self._h_move)
             self.tcp_client.off_message(MessageType.MSG_GAME_OVER, self._h_game_over)
             self.tcp_client.off_message(MessageType.MSG_TURN_WARNING, self._h_warning)
+            self.tcp_client.off_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
+            self.tcp_client.off_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
             
-            # Đóng luôn chat widget nếu cần thiết
             if hasattr(self.chat_widget, 'close'):
                 self.chat_widget.close()
-                
-        except Exception as e:
-            logger.error(f"Error cleaning up GameWindow: {e}")
+        except Exception:
+            pass
         event.accept()
 
     # =========================================================================
-    # 3. UI LOGIC (Handle Signals from Main Thread)
+    # UI HANDLERS
     # =========================================================================
 
+    def handle_start_game_ui(self, payload):
+        current_turn = payload.get('current_turn', '')
+        self.is_my_turn = (current_turn == self.username)
+        
+        self.update_turn_indicator()
+        self.update_opponent_board_state()
+        
+        logger.info(f"[GameWindow] Game started! is_my_turn={self.is_my_turn}")
+
     def on_opponent_cell_click(self, row, col):
-        """Xử lý khi người chơi bấm vào bàn cờ đối thủ"""
-        if not self.game_state.is_your_turn:
-            QMessageBox.warning(self, "Wait", "It's not your turn!")
+        """Xử lý click"""
+        # Logic chặn click: Kiểm tra turn
+        if not self.is_my_turn:
+            QMessageBox.warning(self, "Not Your Turn", "Please wait for your turn!")
             return
         
-        if not self.game_state.can_shoot(row, col):
-            return # Đã bắn ô này rồi
+        # Check đã bắn chưa
+        cell = self.opponent_cells.get((row, col))
+        if cell and cell.text():
+            QMessageBox.warning(self, "Already Fired", "You already fired at this cell!")
+            return
         
-        # Gửi tin nhắn lên Server
+        # Gửi bắn
         msg = TCPMessage(
             type=MessageType.MSG_PLAYER_MOVE,
             payload={'game_id': self.game_id, 'row': row, 'col': col},
             token=self.tcp_client.token
         )
-        if self.tcp_client.send_message(msg):
-            logger.info(f"Fired at ({row}, {col})")
-            # Tạm khóa lượt để tránh spam click
-            self.game_state.is_your_turn = False 
-            self.update_turn_indicator_ui(False)
+        self.tcp_client.send_message(msg)
 
     def handle_move_result_ui(self, payload):
-        """Xử lý kết quả bắn đạn (cập nhật UI)"""
+        """✅ Xử lý kết quả bắn"""
         row = payload.get('row', 0)
         col = payload.get('col', 0)
         is_hit = payload.get('is_hit', False)
@@ -274,85 +374,199 @@ class GameWindow(QMainWindow):
         game_over = payload.get('game_over', False)
         is_your_shot = payload.get('is_your_shot', False)
         
-        logger.info(f"Result: ({row},{col}) hit={is_hit} my_shot={is_your_shot}")
-
-        # 1. Update Game State Data
+        logger.info(f"[GameWindow] ========== MOVE_RESULT ==========")
+        logger.info(f"  Position: ({row},{col})")
+        logger.info(f"  Hit: {is_hit}, Sunk: {is_sunk}, Your shot: {is_your_shot}")
+        logger.info(f"  Game Over: {game_over}")
+        
+        # ✅ Update game state
         self.game_state.process_shot(row, col, is_hit, is_your_shot)
         
-        # 2. Update Cell UI
-        cell = None
+        # ✅ Switch turn (nếu chưa end)
+        if not game_over:
+            if is_your_shot:
+                self.is_my_turn = False
+            else:
+                self.is_my_turn = True
+        
+        # ✅ Update cell appearance
         if is_your_shot:
             cell = self.opponent_cells.get((row, col))
-            # Logic lượt: Nếu bắn trúng -> Có thể được bắn tiếp (tùy luật), 
-            # nhưng ở đây ta cứ set theo server trả về hoặc logic cơ bản.
-            # Giả sử: Bắn trượt -> Mất lượt. Bắn trúng -> Còn lượt.
-            self.game_state.is_your_turn = is_hit 
         else:
             cell = self.your_cells.get((row, col))
-            # Nếu đối thủ bắn trượt -> Đến lượt mình
-            # Nếu đối thủ bắn trúng -> Họ bắn tiếp (Mình mất lượt)
-            self.game_state.is_your_turn = not is_hit
-
+        
         if cell:
             if is_hit:
-                cell.setText("🔥") # Fire emoji
-                cell.setStyleSheet(f"background-color: {COLORS['hit']}; border: 1px solid {COLORS['error']}; font-size: 24px;")
+                cell.setText(self.FIRE)
+                cell.setStyleSheet(f"""
+                    QPushButton {{ 
+                        background-color: {COLORS['hit']}; 
+                        border: 2px solid {COLORS['error']}; 
+                        font-size: 24px;
+                        color: white;
+                    }}
+                """)
+                
                 if is_sunk and is_your_shot:
-                     QMessageBox.information(self, "Sunk!", "You sunk an enemy ship!")
+                    ship_name = SHIP_TYPES.get(sunk_ship_type, {}).get('name', 'Ship')
+                    QMessageBox.information(self, "Ship Sunk!", f"{self.SKULL} You sunk their {ship_name}!")
             else:
-                cell.setText("🌊") # Water wave
-                cell.setStyleSheet(f"background-color: {COLORS['miss']}; border: 1px solid {COLORS['border']};")
-
-        # 3. Update Stats & Indicator
-        self.update_stats_display()
-        self.update_turn_indicator_ui(self.game_state.is_your_turn)
+                cell.setText(self.WATER)
+                cell.setStyleSheet(f"""
+                    QPushButton {{ 
+                        background-color: {COLORS['miss']}; 
+                        border: 1px solid {COLORS['border']};
+                        font-size: 20px;
+                        color: white;
+                    }}
+                """)
+            
+            cell.update()
         
+        # ✅ CRITICAL: Xử lý game over
         if game_over:
-            # Game over sẽ được xử lý ở handler game_over riêng, 
-            # hoặc xử lý luôn ở đây nếu Server không gửi gói MSG_GAME_OVER riêng.
-            pass
+            logger.info(f"[GameWindow] ========== GAME OVER (from MOVE_RESULT) ==========")
+            self.game_ended = True
+            
+            # Determine winner
+            you_won = is_your_shot  # Nếu shot của bạn → bạn thắng
+            
+            # Show dialog
+            QTimer.singleShot(500, lambda: self.show_game_over_dialog(you_won))
+        else:
+            # ✅ Update UI nếu game chưa end
+            self.update_stats_display()
+            self.update_turn_indicator()
+            self.update_opponent_board_state()
+            
+    def show_game_over_dialog(self, you_won, reason=""):  # <--- THÊM reason="" VÀO ĐÂY
+            """Hiển thị dialog và emit signal về Dashboard"""
+            logger.info("[GameWindow] Showing Game Over Dialog...")
+            
+            msg_text = ""
+            if reason:
+                msg_text += f"Reason: {reason}\n\n"
+                
+            if you_won:
+                title = "VICTORY!"
+                msg_text += f"CONGRATULATIONS!\nYOU WON THE BATTLE!"
+                icon = QMessageBox.Icon.Information
+            else:
+                title = "DEFEAT"
+                msg_text += f"MISSION FAILED.\nYour fleet was destroyed or Time Out."
+                icon = QMessageBox.Icon.Critical
+                
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle(title)
+            msg_box.setText(msg_text)
+            msg_box.setIcon(icon)
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
+            
+            logger.info("[GameWindow] Dialog closed. Emitting game_finished signal...")
+            self.game_finished.emit()
+
+    def update_opponent_board_state(self):
+        """✅ Enable/disable opponent cells"""
+        # ✅ Nếu game đã end → DISABLE tất cả
+        if self.game_ended:
+            logger.info("[GameWindow] Game ended, disabling all opponent cells")
+            for cell in self.opponent_cells.values():
+                cell.setEnabled(False)
+            return
+        
+        # ✅ Logic bình thường
+        logger.info(f"[GameWindow] Updating opponent board: is_my_turn={self.is_my_turn}")
+        
+        for (row, col), cell in self.opponent_cells.items():
+            if cell.text():  # Đã bắn
+                cell.setEnabled(False)
+            else:
+                cell.setEnabled(self.is_my_turn)
 
     def handle_game_over_ui(self, payload):
-        """Xử lý kết thúc game"""
-        winner_id = payload.get('winner_id', '')
-        reason = payload.get('reason', '')
+        """✅ Xử lý khi game kết thúc"""
+        winner = payload.get('winner', '')
+        loser = payload.get('loser', '')
         
-        is_winner = (winner_id == self.username)
-        msg = f"Winner: {winner_id}\nReason: {reason}"
+        logger.info("[GameWindow] ========== GAME OVER ==========")
+        logger.info(f"  Winner: {winner}")
+        logger.info(f"  Loser: {loser}")
         
-        if is_winner:
-            QMessageBox.information(self, "Victory!", "🏆 YOU WON!\n" + msg)
+        # ✅ Determine if you won
+        you_won = (winner == self.username)
+        
+        # ✅ Show dialog
+        if you_won:
+            QMessageBox.information(
+                self, 
+                "Victory!", 
+                f"{self.TROPHY} Congratulations!\n\nYou defeated {self.opponent}!",
+                QMessageBox.StandardButton.Ok
+            )
         else:
-            QMessageBox.critical(self, "Defeat", "💀 YOU LOST.\n" + msg)
-            
-        self.close()
+            QMessageBox.information(
+                self, 
+                "Defeat", 
+                f"{self.SKULL} Game Over\n\n{self.opponent} won the battle.",
+                QMessageBox.StandardButton.Ok
+            )
+        
+        # ✅ Close window and return to dashboard
+        logger.info("[GameWindow] Emitting game_finished signal (from MSG_GAME_OVER)...")
+        self.game_finished.emit()
 
     def handle_turn_warning_ui(self, payload):
-        """Cảnh báo sắp hết giờ"""
         sec = payload.get('seconds_remaining', 0)
-        self.turn_indicator.setText(f"⚠️ {sec}s LEFT!")
-        self.turn_indicator.setStyleSheet(f"background-color: {COLORS['error']}; color: white; padding: 10px; border-radius: 8px;")
-
-    def update_turn_indicator_ui(self, is_my_turn):
-        if is_my_turn:
-            self.turn_indicator.setText("🎯 YOUR TURN")
-            self.turn_indicator.setStyleSheet(f"background-color: {COLORS['success']}; color: white; padding: 10px 20px; border-radius: 8px; font-weight: bold;")
+        self.turn_indicator.setText(f"{self.WARNING} {sec}s LEFT!")
+        self.turn_indicator.setStyleSheet(f"background-color: {COLORS['error']}; color: white; padding: 12px; border-radius: 8px;")
+        
+    def handle_game_timeout_ui(self, payload):
+        winner = payload.get('winner', '')
+        logger.info(f"[GameWindow] MSG_GAME_TIMEOUT (Type 29): Winner={winner}")
+        self.game_ended = True
+        self.centralWidget().setEnabled(False)
+        is_winner = (winner == self.username)
+        if self.is_my_turn:
+            # Đang lượt mình mà hết giờ -> Mình Thua
+            is_winner = False
+            reason_msg = "You ran out of time!\nNext time, be faster."
+            logger.info("-> Decision: I LOST (My turn timed out)")
         else:
-            self.turn_indicator.setText(f"⏳ {self.opponent}'S TURN")
-            self.turn_indicator.setStyleSheet(f"background-color: {COLORS['card']}; color: {COLORS['warning']}; padding: 10px 20px; border-radius: 8px; border: 2px solid {COLORS['warning']};")
+            # Đang lượt địch mà hết giờ -> Mình Thắng
+            is_winner = True
+            reason_msg = "Opponent ran out of time!\nYou acted fast enough."
+            logger.info("-> Decision: I WON (Opponent timed out)")
+        QTimer.singleShot(100, lambda: self.show_game_over_dialog(is_winner, reason_msg))
+
+    def update_turn_indicator(self):
+        if self.is_my_turn:
+            self.turn_indicator.setText(f"{self.TARGET} YOUR TURN")
+            self.turn_indicator.setStyleSheet(f"""
+                QLabel {{
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {COLORS['success']}, stop:1 {COLORS['primary']});
+                    color: white; padding: 12px 20px; border-radius: 8px; border: 2px solid {COLORS['success']}; font-weight: bold;
+                }}
+            """)
+        else:
+            self.turn_indicator.setText(f"{self.HOURGLASS} OPPONENT'S TURN")
+            self.turn_indicator.setStyleSheet(f"""
+                QLabel {{
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {COLORS['error']}, stop:1 {COLORS['warning']});
+                    color: white; padding: 12px 20px; border-radius: 8px; border: 2px solid {COLORS['error']}; font-weight: bold;
+                }}
+            """)
 
     def update_stats_display(self):
-        self.your_hits_label.setText(f"Your Hits: {self.game_state.your_hits}")
-        self.your_misses_label.setText(f"Your Misses: {self.game_state.your_misses}")
-        self.opponent_hits_label.setText(f"{self.opponent} Hits: {self.game_state.opponent_hits}")
-        self.opponent_misses_label.setText(f"{self.opponent} Misses: {self.game_state.opponent_misses}")
+        self.your_hits_label.setText(f"{self.FIRE} Your Hits: {self.game_state.your_hits}")
+        self.your_misses_label.setText(f"{self.WATER} Your Misses: {self.game_state.your_misses}")
+        self.opponent_hits_label.setText(f"{self.FIRE} Opponent Hits: {self.game_state.opponent_hits}")
+        self.opponent_misses_label.setText(f"{self.WATER} Opponent Misses: {self.game_state.opponent_misses}")
 
     def resign(self):
-        reply = QMessageBox.question(self, "Resign", "Give up?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(self, "Resign", "Are you sure?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            # Gửi tin nhắn thua cuộc hoặc thoát
-            # self.tcp_client.send_message(...)
-            self.close()
+            self.game_finished.emit()
 
     def apply_dark_theme(self):
         palette = QPalette()
