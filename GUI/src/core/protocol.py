@@ -334,5 +334,21 @@ class TCPMessage:
             reason = read_cstring(128, 64)
             return {'winner_id': winner_id, 'loser_id': loser_id, 'reason': reason}
         
+        elif msg_type == MessageType.MSG_GAME_OVER:
+            winner = read_cstring(0, 64)
+            loser = read_cstring(64, 64)
+            reason = read_cstring(128, 128)
+            
+            logger.info(f"[Protocol] Parsed GAME_OVER:")
+            logger.info(f"  winner={winner}")
+            logger.info(f"  loser={loser}")
+            logger.info(f"  reason={reason}")
+            
+            return {
+                'winner': winner,
+                'loser': loser,
+                'reason': reason
+            }
+        
         else:
             return {}

@@ -557,9 +557,7 @@ class ShipPlacementWindow(QMainWindow):
                 self.tcp_client.game_boards = {self.game_id: board_state}
             
             logger.info(f"[ShipPlacement] Saved board to tcp_client.game_boards[{self.game_id}]")
-            
-            QMessageBox.information(self, "Waiting for Opponent", 
-                "Your fleet is ready!\n\nWaiting for opponent to finish placement...")
+
             self.ready_btn.setEnabled(False)
             self.ready_btn.setText("⏳ WAITING FOR OPPONENT...")
             self.status_label.setText("Waiting for game start...")
