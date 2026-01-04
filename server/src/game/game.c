@@ -911,7 +911,7 @@ bool game_end(const char *game_id, const char *winner_id) {
     result.winner_misses = result.total_turns / 2 - result.winner_hits;
     
     // Update ELO - bổ sung nốt
-    // elo_update_after_match(winner_id, loser_id);
+    elo_update_after_match(winner_id, loser_id);
     
     // Reload users to get new ELO
     user_free(winner);
