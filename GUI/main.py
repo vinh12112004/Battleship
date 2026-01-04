@@ -224,8 +224,31 @@ class BattleshipApp:
         if board_state:
             game_window.game_state.your_board = board_state
             logger.info(f"[Main] Set your_board to GameWindow")
-        
+        game_window.game_finished.connect(self.return_to_dashboard)
         self.switch_to_window(game_window)
+        
+    def return_to_dashboard(self):
+        """Quay về Dashboard sau khi game kết thúc"""
+        logger.info("=" * 50)
+        logger.info("RETURNING TO DASHBOARD AFTER GAME")
+        logger.info(f"Username: {self.username}")
+        logger.info("=" * 50)
+        
+        if not self.username:
+            logger.warning("No username found, returning to login")
+            self.on_logout()
+            return
+        
+        # Tạo Dashboard mới
+        dashboard = DashboardWindow(self.tcp_client, self.username)
+        
+        # ⚠️ CRITICAL: Connect signals lại
+        dashboard.start_game_signal.connect(self.on_game_start)
+        dashboard.logout_signal.connect(self.on_logout)
+        
+        logger.info("Dashboard created and signals connected")
+        
+        self.switch_to_window(dashboard)
 
 def main():
     """Main entry point"""
