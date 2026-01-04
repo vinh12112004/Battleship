@@ -39,6 +39,8 @@ typedef enum {
     MSG_TURN_WARNING = 28,
     MSG_GAME_TIMEOUT = 29,
     MSG_CHAT_MESSAGE = 30,
+    MSG_GAME_RESULT = 31,
+    MSG_GAME_LOGS = 32,
 } msg_type;
 
 typedef struct __attribute__((packed)) {
@@ -113,6 +115,40 @@ typedef struct {
     char reason[64];
 } game_timeout_payload;
 
+typedef struct __attribute__((packed)) {
+    char player_username[32];
+    int row;
+    int col;
+    bool is_hit;
+    bool is_sunk;
+    int sunk_ship_type;
+    int turn_number;
+    uint32_t timestamp;
+} game_log_entry_t;
+
+typedef struct __attribute__((packed)) {
+    char game_id[65];
+    int chunk_index;      // Current chunk (0-based)
+    int total_chunks;     // Total number of chunks
+    int log_count;        // Number of logs in this chunk
+    game_log_entry_t logs[50];  // Max 50 logs per message
+} game_logs_payload;
+typedef struct __attribute__((packed)) {
+    char game_id[65];
+    char winner_id[64];
+    char winner_username[32];
+    char loser_username[32];
+    int total_turns;
+    uint32_t game_duration;      // Seconds
+    int winner_old_elo;
+    int winner_new_elo;
+    int loser_old_elo;
+    int loser_new_elo;
+    int winner_hits;
+    int winner_misses;
+    int loser_hits;
+    int loser_misses;
+} game_result_payload;
 // Message structure
 typedef struct __attribute__((packed)) {
     msg_type type;
@@ -134,6 +170,8 @@ typedef struct __attribute__((packed)) {
         challenge_response_payload challenge_resp;
         turn_warning_payload turn_warning;
         game_timeout_payload game_timeout;
+        game_result_payload game_result; 
+        game_logs_payload game_logs;
     } payload;
 } message_t;
 
