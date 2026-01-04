@@ -14,7 +14,7 @@ class DashboardWindow(QMainWindow):
     
     # 1. SIGNALS: Định nghĩa tín hiệu để giao tiếp giữa Thread Mạng và Thread UI
     start_game_signal = pyqtSignal(str, str)  # Để main.py bắt sự kiện chuyển cảnh
-    
+    logout_signal = pyqtSignal()
     # Tín hiệu nội bộ để update UI an toàn
     sig_server_start_game = pyqtSignal(dict)
     sig_challenge_received = pyqtSignal(dict)
@@ -327,11 +327,37 @@ class DashboardWindow(QMainWindow):
         self.start_game_signal.emit(game_id, opponent)
 
     def logout(self):
-        reply = QMessageBox.question(self, "Logout", "Are you sure you want to logout?",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(
+            self, 
+            "Logout", 
+            "Are you sure you want to logout?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
         if reply == QMessageBox.StandardButton.Yes:
-            self.tcp_client.send_message(TCPMessage(type=MessageType.MSG_LOGOUT, payload={}, token=self.tcp_client.token))
-            self.close()
+            logger.info("LOGOUT CONFIRMED")
+            
+            # Stop timer
+            if hasattr(self, 'refresh_timer'):
+                self.refresh_timer.stop()
+            
+            # Send logout message
+            msg = TCPMessage(
+                type=MessageType.MSG_LOGOUT, 
+                payload={}, 
+                token=self.tcp_client.token
+            )
+            self.tcp_client.send_message(msg)
+            
+            # Clear token
+            self.tcp_client.token = None
+            
+            # ẨN DASHBOARD NGAY LẬP TỨC
+            self.hide()
+            
+            # Defer signal emission để tránh conflict
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, self.logout_signal.emit)
 
     def apply_dark_theme(self):
         palette = QPalette()

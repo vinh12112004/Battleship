@@ -69,25 +69,77 @@ class BattleshipApp:
     def switch_to_window(self, new_window):
         """Hàm trung gian để chuyển đổi cửa sổ an toàn"""
         if self.current_window:
+            # KHÔNG disconnect signals ở đây vì đã disconnect trong on_logout
             self.current_window.close()
+            self.current_window.deleteLater()
         
         self.current_window = new_window
         self.current_window.show()
 
     def on_login_success(self, username, token):
         """Handle successful login"""
+        # VALIDATE
+        if not username or not token:
+            logger.error(f"Invalid login success: username='{username}', token='{token[:15] if token else 'empty'}'")
+            return
+        
         self.username = username
-        self.tcp_client.token = token
         if self.tcp_client:
             self.tcp_client.token = token
             logger.info(f"Token saved to TCP Client: {token[:15]}...")
-            
+        
         logger.info(f"Logged in as {username}")
         
-        # Tạo Dashboard và chuyển cảnh
-        dashboard = DashboardWindow(self.tcp_client, self.username)
+        # Cleanup LoginWindow handlers TRƯỚC KHI tạo Dashboard
+        if self.current_window and isinstance(self.current_window, LoginWindow):
+            logger.info("Cleaning up LoginWindow before creating Dashboard")
+            # LoginWindow sẽ tự cleanup trong closeEvent, nhưng ta force nó
+            self.current_window.close()
+        
+        # Tạo Dashboard
+        dashboard = DashboardWindow(
+            self.tcp_client, 
+            self.username
+        )
+        
+        # Connect signals
         dashboard.start_game_signal.connect(self.on_game_start)
+        dashboard.logout_signal.connect(self.on_logout)
+        
         self.switch_to_window(dashboard)
+    
+    def on_logout(self):
+        from PyQt6.QtCore import QTimer
+        
+        logger.info("ON_LOGOUT CALLED - Handling logout")
+        
+        # Clear session state
+        self.username = None
+        self.current_game_id = None
+
+        if self.tcp_client:
+            self.tcp_client.token = None
+
+        # Defer transition
+        QTimer.singleShot(0, self._do_logout_transition)
+
+    def _do_logout_transition(self):
+        logger.info("Performing logout transition...")
+        
+        # Đóng và cleanup dashboard cũ HOÀN TOÀN
+        if self.current_window:
+            self.current_window.close()
+            self.current_window.deleteLater()
+            self.current_window = None
+        
+        # Tạo LoginWindow mới
+        login_window = LoginWindow(self.tcp_client)
+        login_window.login_success.connect(self.on_login_success)
+        
+        self.current_window = login_window
+        self.current_window.show()
+        
+        logger.info("Switched to LoginWindow successfully")
     
     def on_game_start(self, game_id, opponent):
         """Handle game start"""
@@ -172,8 +224,31 @@ class BattleshipApp:
         if board_state:
             game_window.game_state.your_board = board_state
             logger.info(f"[Main] Set your_board to GameWindow")
-        
+        game_window.game_finished.connect(self.return_to_dashboard)
         self.switch_to_window(game_window)
+        
+    def return_to_dashboard(self):
+        """Quay về Dashboard sau khi game kết thúc"""
+        logger.info("=" * 50)
+        logger.info("RETURNING TO DASHBOARD AFTER GAME")
+        logger.info(f"Username: {self.username}")
+        logger.info("=" * 50)
+        
+        if not self.username:
+            logger.warning("No username found, returning to login")
+            self.on_logout()
+            return
+        
+        # Tạo Dashboard mới
+        dashboard = DashboardWindow(self.tcp_client, self.username)
+        
+        # ⚠️ CRITICAL: Connect signals lại
+        dashboard.start_game_signal.connect(self.on_game_start)
+        dashboard.logout_signal.connect(self.on_logout)
+        
+        logger.info("Dashboard created and signals connected")
+        
+        self.switch_to_window(dashboard)
 
 def main():
     """Main entry point"""

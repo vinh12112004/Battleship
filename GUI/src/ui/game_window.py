@@ -8,6 +8,9 @@ from ..utils.logger import logger
 from ..utils.constants import COLORS, GRID_SIZE, SHIP_TYPES
 from .chat_widget import ChatWidget
 from .game_result_dialog import GameResultDialog
+from ..utils.icon_loader import IconManager
+from PyQt6.QtCore import QSize
+
 
 class GameWindow(QMainWindow):
     """Main game window with boards and chat"""
@@ -221,12 +224,15 @@ class GameWindow(QMainWindow):
                     cell.setEnabled(False)
                     
                     cell_value = self.game_state.your_board[row * GRID_SIZE + col]
-                    if 1 <= cell_value <= 5: 
-                        cell.setText(self.SHIP)
-                        # Lấy màu theo loại tàu để đẹp hơn (Optional)
+                    if 1 <= cell_value <= 5:
+                        icon = IconManager.SHIPS.get(cell_value)
+
+                        cell.setText("")                 # ❌ bỏ emoji
+                        cell.setIcon(icon)               # ✅ SVG
+                        cell.setIconSize(QSize(32, 32))
+
                         ship_color = SHIP_TYPES.get(cell_value, {}).get('color', COLORS['primary'])
-                        
-                        cell.setStyleSheet(base_style + f"""
+                        cell.setStyleSheet(f"""
                             QPushButton {{
                                 background-color: {ship_color};
                                 border: 2px solid {COLORS['accent']};

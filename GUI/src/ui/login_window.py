@@ -16,6 +16,7 @@ class LoginWindow(QWidget):
         super().__init__()
         self.tcp_client = tcp_client
         self.token = None
+        self._is_active = True  # FLAG MỚI để track trạng thái active
         
         self.init_ui()
         self._handler_success = self.sig_auth_success.emit
@@ -230,20 +231,41 @@ class LoginWindow(QWidget):
         self.setPalette(palette)
         
     def handle_auth_success_ui(self, payload):
+        # Bỏ qua nếu window không còn active
+        if not self._is_active:
+            logger.debug("Ignoring auth success - LoginWindow no longer active")
+            return
+        
         token = payload.get('token', '')
         username = payload.get('username', '')
+        
+        # VALIDATE: Không chấp nhận token hoặc username rỗng
+        if not token or not username:
+            logger.debug(f"Ignoring invalid auth success: username='{username}', token='{token[:15] if token else 'empty'}'")
+            # KHÔNG hiện error, chỉ log để debug
+            return
+        
         logger.info(f"Login successful: {username}")
         
         self.token = token
         self.login_success.emit(username, token)
-        self.close() # An toàn vì đang ở Main Thread
+        self._is_active = False  # Đánh dấu không còn active
+        self.close()
 
     def handle_auth_failed_ui(self, payload):
+        # Bỏ qua nếu window không còn active
+        if not self._is_active:
+            logger.debug("Ignoring auth failed - LoginWindow no longer active")
+            return
+        
         reason = payload.get('reason', 'Unknown error')
         self.show_error(f"Authentication failed: {reason}")
         
     def closeEvent(self, event):
         """Dọn dẹp handler khi đóng cửa sổ"""
+        # Đánh dấu không còn active NGAY LẬP TỨC
+        self._is_active = False
+        
         try:
             # Gỡ bỏ chính xác cái hàm đã đăng ký
             self.tcp_client.off_message(MessageType.MSG_AUTH_SUCCESS, self._handler_success)

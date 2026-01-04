@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 400 120"
+     width="400"
+     height="120">
+
+  <defs>
+    <linearGradient id="battleGradModern" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a1a"/>
+      <stop offset="100%" stop-color="#0a0a0a" stop-opacity="0.8"/>
+    </linearGradient>
+
+    <filter id="battleGlow">
+      <feGaussianBlur stdDeviation="2"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Hull -->
+  <path d="M8,85 L375,85 L392,62 L385,55 L20,55 L12,62 Z"
+        fill="url(#battleGradModern)"
+        filter="url(#battleGlow)"/>
+
+  <!-- Superstructure -->
+  <rect x="150" y="40" width="100" height="15" rx="2" fill="#0d0d0d"/>
+  <rect x="170" y="28" width="60" height="12" rx="1" fill="#0d0d0d"/>
+
+  <!-- Turret -->
+  <ellipse cx="75" cy="50" rx="16" ry="14" fill="#2a2a2a"/>
+  <rect x="85" y="49" width="45" height="3" fill="#1a1a1a"/>
+
+  <ellipse cx="315" cy="50" rx="16" ry="14" fill="#2a2a2a"/>
+  <rect x="270" y="49" width="45" height="3" fill="#1a1a1a"/>
+
+</svg>

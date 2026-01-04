@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 300 120"
+     width="300"
+     height="120">
+
+  <defs>
+    <linearGradient id="destroyerGradModern" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2a2a"/>
+      <stop offset="100%" stop-color="#0d0d0d" stop-opacity="0.8"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M5,85 L275,85 L293,60 L288,52 L25,52 L15,60 Z"
+        fill="url(#destroyerGradModern)"/>
+
+  <polygon points="120,52 135,30 175,30 190,52"
+           fill="#0d0d0d"/>
+
+  <rect x="195" y="35" width="12" height="17" rx="2"
+        fill="#1a1a1a"/>
+
+</svg>
