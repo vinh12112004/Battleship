@@ -288,14 +288,37 @@ class DashboardWindow(QMainWindow):
         )
         self.tcp_client.send_message(msg)
 
-    def send_challenge(self, target_username, target_id):
+    # ✅ SỬA LẠI: Thêm tham số để nhận dữ liệu từ Signal
+    def send_challenge(self, target_username, target_user_id):
+        """Gửi lời mời thách đấu (Nhận username trực tiếp từ nút bấm)"""
+        
+        # 1. Kiểm tra logic cơ bản
+        if not target_username:
+            return
+
+        if target_username == self.username:
+            QMessageBox.warning(self, "Error", "You cannot challenge yourself!")
+            return
+
+        # 2. Gửi tin nhắn Type 19 (MSG_CHALLENGE_REQUEST)
+        logger.info(f"Sending challenge to: {target_username}")
+        
         msg = TCPMessage(
-            type=MessageType.MSG_CHALLENGE_PLAYER,
-            payload={'target_id': target_id, 'game_mode': 'casual', 'time_control': 10},
+            type=MessageType.MSG_CHALLENGE_PLAYER,  
+            payload={
+                "target_id": target_username,
+                "game_mode": "standard",
+                "time_control": 300
+            },
             token=self.tcp_client.token
         )
+        
         if self.tcp_client.send_message(msg):
-            QMessageBox.information(self, "Challenge Sent", f"Challenge sent to {target_username}!")
+            # Có thể hiện thông báo nhỏ hoặc update status bar
+            # QMessageBox.information(self, "Sent", f"Challenge sent to {target_username}!")
+            pass
+        else:
+            QMessageBox.critical(self, "Error", "Failed to send challenge request.")
 
     def rejoin_game(self, item):
         game_id = item.data(Qt.ItemDataRole.UserRole)
