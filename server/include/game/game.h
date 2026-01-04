@@ -67,6 +67,43 @@ typedef struct {
     bool turn_timeout_warned;      // warning
 } game_session_t;
 
+typedef struct {
+    char player_id[64];          // Người bắn
+    char player_username[32];    // Username (để hiển thị)
+    int row;
+    int col;
+    bool is_hit;
+    bool is_sunk;
+    ship_type_t sunk_ship_type;  // 0 nếu không chìm
+    int64_t timestamp;           // Unix timestamp (ms)
+    int turn_number;             // Lượt thứ mấy
+} game_move_log_t;
+
+typedef struct {
+    char game_id[65];
+    char winner_id[64];
+    char winner_username[32];
+    char loser_id[64];
+    char loser_username[32];
+    
+    int total_turns;             // Tổng số lượt
+    int64_t game_duration;       // Thời gian (giây)
+    int64_t started_at;          // Timestamp bắt đầu
+    int64_t ended_at;            // Timestamp kết thúc
+    
+    // ELO changes
+    int winner_old_elo;
+    int winner_new_elo;
+    int loser_old_elo;
+    int loser_new_elo;
+    
+    // Stats
+    int winner_hits;
+    int winner_misses;
+    int loser_hits;
+    int loser_misses;
+} game_result_t;
+
 bool game_is_player_turn(const char *game_id, const char *player_id);
 void game_switch_turn(game_session_t *game);
 game_session_t* game_find_by_player(const char *player_id);
@@ -86,4 +123,8 @@ void game_free(game_session_t *game);
 bool game_set_player_ready(const char *game_id, const char *player_id, const uint8_t board[BOARD_SIZE]);
 void* game_timeout_monitor_thread(void* arg);
 void game_init_timeout_monitor();
+
+bool game_log_move(const char *game_id, const game_move_log_t *move);
+bool game_save_result(const game_result_t *result);
+game_result_t* game_get_result(const char *game_id);
 #endif // GAME_H

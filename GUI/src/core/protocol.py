@@ -37,7 +37,8 @@ class MessageType(IntEnum):
     MSG_TURN_WARNING = 28
     MSG_GAME_TIMEOUT = 29
     MSG_CHAT_MESSAGE = 30
-
+    MSG_GAME_RESULT = 31
+    MSG_GAME_LOGS = 32
 @dataclass
 class TCPMessage:
     """TCP message wrapper"""
@@ -101,6 +102,7 @@ class TCPMessage:
             try:
                 msg_type_enum = MessageType(msg_type_val)
             except ValueError:
+                logger.error(f"❌ INVALID MESSAGE TYPE: {msg_type_val}. Not in Enum!")
                 # Type không tồn tại trong Enum
                 return None 
             
@@ -349,6 +351,94 @@ class TCPMessage:
                 'loser': loser,
                 'reason': reason
             }
-        
+        elif msg_type == MessageType.MSG_GAME_RESULT:
+            try:
+                # 1. Đọc String (Cố định)
+                # 0->65: game_id
+                # 65->129: winner_id
+                # 129->161: winner_username
+                # 161->193: loser_username
+                game_id = data[0:65].decode('utf-8').rstrip('\x00')
+                winner_id = data[65:129].decode('utf-8').rstrip('\x00')
+                winner_username = data[129:161].decode('utf-8').rstrip('\x00')
+                loser_username = data[161:193].decode('utf-8').rstrip('\x00')
+                
+                # 2. Đọc Số (Offset bắt đầu từ 193)
+                # Lưu ý: Các offset này phải cách nhau 4 byte (vì int32)
+                
+                total_turns = struct.unpack_from('<i', data, 193)[0]     # Offset 193
+                game_duration = struct.unpack_from('<I', data, 197)[0]   # Offset 197 (Dùng 'I' vì là uint32)
+                
+                winner_old_elo = struct.unpack_from('<i', data, 201)[0]  # Offset 201
+                winner_new_elo = struct.unpack_from('<i', data, 205)[0]  # Offset 205
+                loser_old_elo = struct.unpack_from('<i', data, 209)[0]   # Offset 209
+                loser_new_elo = struct.unpack_from('<i', data, 213)[0]   # Offset 213
+                
+                winner_hits = struct.unpack_from('<i', data, 217)[0]     # Offset 217
+                winner_misses = struct.unpack_from('<i', data, 221)[0]   # Offset 221
+                loser_hits = struct.unpack_from('<i', data, 225)[0]      # Offset 225
+                loser_misses = struct.unpack_from('<i', data, 229)[0]    # Offset 229
+                
+                logger.info(f"Parsed GAME_RESULT: Winner={winner_username}, Duration={game_duration}")
+
+                return {
+                    'game_id': game_id,
+                    'winner_id': winner_id,
+                    'winner_username': winner_username,
+                    'loser_username': loser_username,
+                    'total_turns': total_turns,
+                    'game_duration': game_duration,
+                    'winner_old_elo': winner_old_elo,
+                    'winner_new_elo': winner_new_elo,
+                    'loser_old_elo': loser_old_elo,
+                    'loser_new_elo': loser_new_elo,
+                    'winner_hits': winner_hits,
+                    'winner_misses': winner_misses,
+                    'loser_hits': loser_hits,
+                    'loser_misses': loser_misses
+                }
+            except Exception as e:
+                logger.critical(f"❌ FAILED TO PARSE MSG_GAME_RESULT: {e}")
+                return {}
+        elif msg_type == MessageType.MSG_GAME_LOGS:
+            try:
+                game_id = data[0:65].decode('utf-8').rstrip('\x00')
+                chunk_index = struct.unpack_from('<i', data, 65)[0]
+                total_chunks = struct.unpack_from('<i', data, 69)[0]
+                log_count = struct.unpack_from('<i', data, 73)[0]
+                
+                logs = []
+                offset = 77  # Bắt đầu đọc mảng logs
+                
+                for i in range(log_count):
+                    # Kích thước mỗi log: 32 (user) + 4(row) + 4(col) + 1(hit) + 1(sunk) + 4(type) + 4(turn) + 4(time) = 54 bytes
+                    
+                    # Do struct C có padding (is_hit, is_sunk là bool 1 byte, kế đó là int 4 byte)
+                    # Layout C (packed): [User 32][Row 4][Col 4][Hit 1][Sunk 1][Type 4][Turn 4][Time 4]
+                    # Tổng cộng đúng 54 bytes nếu packed.
+                    
+                    log = {
+                        'player_username': data[offset:offset+32].decode('utf-8').rstrip('\x00'),
+                        'row': struct.unpack_from('<i', data, offset+32)[0],
+                        'col': struct.unpack_from('<i', data, offset+36)[0],
+                        'is_hit': bool(data[offset+40]),
+                        'is_sunk': bool(data[offset+41]),
+                        'sunk_ship_type': struct.unpack_from('<i', data, offset+42)[0],
+                        'turn_number': struct.unpack_from('<i', data, offset+46)[0],
+                        'timestamp': struct.unpack_from('<I', data, offset+50)[0] # ✅ Dùng 'I' (4 bytes)
+                    }
+                    logs.append(log)
+                    offset += 54 # ✅ Giảm từ 58 xuống 54
+                
+                return {
+                    'game_id': game_id,
+                    'chunk_index': chunk_index,
+                    'total_chunks': total_chunks,
+                    'log_count': log_count,
+                    'logs': logs
+                }
+            except Exception as e:
+                logger.error(f"❌ Error parsing MSG_GAME_LOGS: {e}")
+                return {}
         else:
             return {}

@@ -7,6 +7,7 @@ from ..core.game_state import GameStateManager, CellState
 from ..utils.logger import logger
 from ..utils.constants import COLORS, GRID_SIZE, SHIP_TYPES
 from .chat_widget import ChatWidget
+from .game_result_dialog import GameResultDialog
 
 class GameWindow(QMainWindow):
     """Main game window with boards and chat"""
@@ -18,6 +19,8 @@ class GameWindow(QMainWindow):
     sig_game_timeout = pyqtSignal(dict)
     sig_start_game = pyqtSignal(dict)
     game_finished = pyqtSignal()
+    sig_game_result = pyqtSignal(dict)
+    sig_game_logs = pyqtSignal(dict)
     
     def __init__(self, tcp_client, username, game_id, opponent, current_turn, board_state=None):
         super().__init__()
@@ -25,10 +28,13 @@ class GameWindow(QMainWindow):
         self.username = username
         self.game_id = game_id
         self.opponent = opponent
+        self.is_result_shown = False
         
         self.game_state = GameStateManager()
         self.game_state.game_id = game_id
         self.game_state.opponent = opponent
+        self.game_logs = []
+        self.game_end_reason = None
         
         if board_state:
             self.game_state.your_board = board_state
@@ -299,6 +305,8 @@ class GameWindow(QMainWindow):
         self.sig_game_over.connect(self.handle_game_over_ui)
         self.sig_turn_warning.connect(self.handle_turn_warning_ui)
         self.sig_game_timeout.connect(self.handle_game_timeout_ui)
+        self.sig_game_result.connect(self.handle_game_result_ui)
+        self.sig_game_logs.connect(self.handle_game_logs_ui)
 
     def setup_handlers(self):
         # Store references
@@ -307,13 +315,16 @@ class GameWindow(QMainWindow):
         self._h_game_over = lambda payload: self.sig_game_over.emit(payload)
         self._h_warning = lambda payload: self.sig_turn_warning.emit(payload)
         self._h_timeout = lambda payload: self.sig_game_timeout.emit(payload)
-
+        self._h_game_result = self.sig_game_result.emit
+        self._h_game_logs = self.sig_game_logs.emit
         # Register
         self.tcp_client.on_message(MessageType.MSG_START_GAME, self._h_start)
         self.tcp_client.on_message(MessageType.MSG_MOVE_RESULT, self._h_move)
         self.tcp_client.on_message(MessageType.MSG_GAME_OVER, self._h_game_over)
         self.tcp_client.on_message(MessageType.MSG_TURN_WARNING, self._h_warning)
         self.tcp_client.on_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
+        self.tcp_client.on_message(MessageType.MSG_GAME_RESULT, self._h_game_result)
+        self.tcp_client.on_message(MessageType.MSG_GAME_LOGS, self._h_game_logs)
         
     def closeEvent(self, event):
         try:
@@ -323,6 +334,8 @@ class GameWindow(QMainWindow):
             self.tcp_client.off_message(MessageType.MSG_TURN_WARNING, self._h_warning)
             self.tcp_client.off_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
             self.tcp_client.off_message(MessageType.MSG_GAME_TIMEOUT, self._h_timeout)
+            self.tcp_client.off_message(MessageType.MSG_GAME_RESULT, self._h_game_result)
+            self.tcp_client.off_message(MessageType.MSG_GAME_LOGS, self._h_game_logs)
             
             if hasattr(self.chat_widget, 'close'):
                 self.chat_widget.close()
@@ -407,7 +420,7 @@ class GameWindow(QMainWindow):
                     }}
                 """)
                 
-                if is_sunk and is_your_shot:
+                if is_sunk and is_your_shot and not game_over:
                     ship_name = SHIP_TYPES.get(sunk_ship_type, {}).get('name', 'Ship')
                     QMessageBox.information(self, "Ship Sunk!", f"{self.SKULL} You sunk their {ship_name}!")
             else:
@@ -432,7 +445,9 @@ class GameWindow(QMainWindow):
             you_won = is_your_shot  # Nếu shot của bạn → bạn thắng
             
             # Show dialog
-            QTimer.singleShot(500, lambda: self.show_game_over_dialog(you_won))
+            # QTimer.singleShot(500, lambda: self.show_game_over_dialog(you_won))
+            logger.info("Waiting for MSG_GAME_RESULT to show stats...")
+            pass
         else:
             # ✅ Update UI nếu game chưa end
             self.update_stats_display()
@@ -522,22 +537,20 @@ class GameWindow(QMainWindow):
         self.turn_indicator.setStyleSheet(f"background-color: {COLORS['error']}; color: white; padding: 12px; border-radius: 8px;")
         
     def handle_game_timeout_ui(self, payload):
-        winner = payload.get('winner', '')
-        logger.info(f"[GameWindow] MSG_GAME_TIMEOUT (Type 29): Winner={winner}")
-        self.game_ended = True
+        winner = payload.get('winner_id', 'Unknown') # Backend gửi username vào field này
+        reason = payload.get('reason', 'Time Out')
+        
+        logger.info(f"[GameWindow] TIMEOUT received. Winner: {winner}, Reason: {reason}")
+        
+        # 1. Lưu lý do lại để Dialog Result dùng
+        self.game_end_reason = "⏱️ TIME OUT!" 
+        
+        # 2. Khóa bàn cờ ngay lập tức
         self.centralWidget().setEnabled(False)
-        is_winner = (winner == self.username)
-        if self.is_my_turn:
-            # Đang lượt mình mà hết giờ -> Mình Thua
-            is_winner = False
-            reason_msg = "You ran out of time!\nNext time, be faster."
-            logger.info("-> Decision: I LOST (My turn timed out)")
-        else:
-            # Đang lượt địch mà hết giờ -> Mình Thắng
-            is_winner = True
-            reason_msg = "Opponent ran out of time!\nYou acted fast enough."
-            logger.info("-> Decision: I WON (Opponent timed out)")
-        QTimer.singleShot(100, lambda: self.show_game_over_dialog(is_winner, reason_msg))
+        
+        # 3. Cập nhật Text Indicator
+        self.turn_indicator.setText("⏳ TIME OUT!")
+        self.turn_indicator.setStyleSheet(f"background-color: {COLORS['error']}; color: white;")
 
     def update_turn_indicator(self):
         if self.is_my_turn:
@@ -567,6 +580,76 @@ class GameWindow(QMainWindow):
         reply = QMessageBox.question(self, "Resign", "Are you sure?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             self.game_finished.emit()
+            
+    def handle_game_logs_ui(self, payload):
+        """✅ Xử lý logs (có thể nhận nhiều chunks)"""
+        logger.info(f"[GameWindow] Received log chunk {payload['chunk_index']+1}/{payload['total_chunks']}")
+        
+        # Append logs
+        self.game_logs.extend(payload['logs'])
+        
+        # Nếu đã nhận đủ tất cả chunks
+        if payload['chunk_index'] + 1 == payload['total_chunks']:
+            logger.info(f"[GameWindow] All log chunks received ({len(self.game_logs)} logs)")
+            # Logs đã đủ, chờ result hoặc hiển thị ngay nếu result đã có
+            
+    def handle_game_result_ui(self, payload):
+        """✅ Hiển thị kết quả + logs (Có cơ chế chống treo)"""
+        logger.info(f"[GameWindow] Game result received. Reason: {self.game_end_reason}")
+        if self.is_result_shown:
+            logger.warning("[GameWindow] Result dialog already shown. Ignoring duplicate message.")
+            return
+        self.is_result_shown = True
+        # Reset biến đếm số lần thử
+        self.log_wait_attempts = 0
+        
+        # Lưu payload lại để dùng trong hàm con
+        self.result_payload = payload
+
+        def show_dialog():
+            # 1. Kiểm tra logs
+            # Nếu chưa có log VÀ số lần thử < 5 -> Đợi tiếp
+            if len(self.game_logs) == 0 and self.log_wait_attempts < 5:
+                self.log_wait_attempts += 1
+                logger.warning(f"[GameWindow] No logs received yet, waiting... ({self.log_wait_attempts}/5)")
+                QTimer.singleShot(500, show_dialog)
+                return
+            
+            # 2. Đã đủ log HOẶC đã đợi quá lâu -> Hiện Dialog
+            if len(self.game_logs) == 0:
+                logger.warning("[GameWindow] Giving up on logs, showing result anyway.")
+
+            # Xác định lý do (Ưu tiên lý do Timeout đã lưu, nếu không thì lấy mặc định)
+            final_reason = self.game_end_reason
+            if not final_reason:
+                if payload.get('winner_id'):
+                    final_reason = "Game Finished 🏁"
+                else:
+                    final_reason = "Draw / Unknown"
+
+            # 3. Khởi tạo và hiện Dialog
+            # Lưu ý: fallback username nếu server gửi chuỗi rỗng
+            result_data = self.result_payload
+            if not result_data.get('winner_username'):
+                # Nếu username rỗng, tạm dùng winner_id hoặc "Unknown"
+                result_data['winner_username'] = result_data.get('winner_id', 'Unknown')
+
+            result_dialog = GameResultDialog(
+                result_data, 
+                self.game_logs, 
+                self.username, 
+                reason=final_reason, # ✅ Truyền lý do vào
+                parent=self
+            )
+            result_dialog.exec()
+            
+            # 4. Sau khi đóng Dialog -> Bắn tín hiệu về Dashboard
+            logger.info("[GameWindow] Dialog closed. Emitting game_finished...")
+            self.game_finished.emit()
+            self.close()
+
+        # Bắt đầu quy trình hiển thị
+        QTimer.singleShot(100, show_dialog)
 
     def apply_dark_theme(self):
         palette = QPalette()

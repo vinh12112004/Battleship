@@ -561,6 +561,207 @@ void game_switch_turn(game_session_t *game) {
     log_info("Turn switched to: %s", game->current_turn);
 }
 
+game_move_log_t* game_get_logs(const char *game_id, int *out_count) {
+    mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
+    if (!client) {
+        *out_count = 0;
+        return NULL;
+    }
+
+    mongoc_collection_t *collection = mongo_get_collection(client, "game_logs");
+    if (!collection) {
+        mongo_release_client(g_mongo_ctx, client);
+        *out_count = 0;
+        return NULL;
+    }
+
+    // Query logs for this game
+    bson_t *query = bson_new();
+    BSON_APPEND_UTF8(query, "game_id", game_id);
+
+    // Sort by turn_number ascending
+    bson_t *opts = BCON_NEW("sort", "{", "turn_number", BCON_INT32(1), "}");
+
+    mongoc_cursor_t *cursor = mongoc_collection_find_with_opts(collection, query, opts, NULL);
+
+    // Count logs first
+    int count = 0;
+    const bson_t *doc;
+    while (mongoc_cursor_next(cursor, &doc)) {
+        count++;
+    }
+
+    if (count == 0) {
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_cursor_destroy(cursor);
+        mongoc_collection_destroy(collection);
+        mongo_release_client(g_mongo_ctx, client);
+        *out_count = 0;
+        return NULL;
+    }
+
+    // Allocate array
+    game_move_log_t *logs = (game_move_log_t*)malloc(sizeof(game_move_log_t) * count);
+    if (!logs) {
+        log_error("Failed to allocate memory for logs");
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_cursor_destroy(cursor);
+        mongoc_collection_destroy(collection);
+        mongo_release_client(g_mongo_ctx, client);
+        *out_count = 0;
+        return NULL;
+    }
+
+    // Reset cursor
+    mongoc_cursor_destroy(cursor);
+    cursor = mongoc_collection_find_with_opts(collection, query, opts, NULL);
+
+    // Read logs
+    int idx = 0;
+    while (mongoc_cursor_next(cursor, &doc)) {
+        bson_iter_t iter;
+
+        if (bson_iter_init_find(&iter, doc, "player_id")) {
+            strncpy(logs[idx].player_id, bson_iter_utf8(&iter, NULL), 63);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "player_username")) {
+            strncpy(logs[idx].player_username, bson_iter_utf8(&iter, NULL), 31);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "row")) {
+            logs[idx].row = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "col")) {
+            logs[idx].col = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "is_hit")) {
+            logs[idx].is_hit = bson_iter_bool(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "is_sunk")) {
+            logs[idx].is_sunk = bson_iter_bool(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "sunk_ship_type")) {
+            logs[idx].sunk_ship_type = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "turn_number")) {
+            logs[idx].turn_number = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "timestamp")) {
+            logs[idx].timestamp = bson_iter_date_time(&iter);
+        }
+
+        idx++;
+    }
+
+    bson_destroy(query);
+    bson_destroy(opts);
+    mongoc_cursor_destroy(cursor);
+    mongoc_collection_destroy(collection);
+    mongo_release_client(g_mongo_ctx, client);
+
+    *out_count = count;
+    return logs;
+}
+
+bool game_log_move(const char *game_id, const game_move_log_t *move) {
+    mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
+    if (!client) return false;
+
+    mongoc_collection_t *collection = mongo_get_collection(client, "game_logs");
+    if (!collection) {
+        mongo_release_client(g_mongo_ctx, client);
+        return false;
+    }
+
+    bson_t *doc = bson_new();
+    BSON_APPEND_UTF8(doc, "game_id", game_id);
+    BSON_APPEND_UTF8(doc, "player_id", move->player_id);
+    BSON_APPEND_UTF8(doc, "player_username", move->player_username);
+    BSON_APPEND_INT32(doc, "row", move->row);
+    BSON_APPEND_INT32(doc, "col", move->col);
+    BSON_APPEND_BOOL(doc, "is_hit", move->is_hit);
+    BSON_APPEND_BOOL(doc, "is_sunk", move->is_sunk);
+    BSON_APPEND_INT32(doc, "sunk_ship_type", move->sunk_ship_type);
+    BSON_APPEND_INT32(doc, "turn_number", move->turn_number);
+    bson_append_date_time(doc, "timestamp", -1, move->timestamp);
+
+    bson_error_t error;
+    bool success = mongoc_collection_insert_one(collection, doc, NULL, NULL, &error);
+
+    if (!success) {
+        log_error("Failed to log move: %s", error.message);
+    }
+
+    bson_destroy(doc);
+    mongoc_collection_destroy(collection);
+    mongo_release_client(g_mongo_ctx, client);
+
+    return success;
+}
+
+bool game_save_result(const game_result_t *result) {
+    mongoc_client_t *client = mongo_get_client(g_mongo_ctx);
+    if (!client) return false;
+
+    mongoc_collection_t *collection = mongo_get_collection(client, "game_results");
+    if (!collection) {
+        mongo_release_client(g_mongo_ctx, client);
+        return false;
+    }
+
+    bson_t *doc = bson_new();
+    BSON_APPEND_UTF8(doc, "game_id", result->game_id);
+    BSON_APPEND_UTF8(doc, "winner_id", result->winner_id);
+    BSON_APPEND_UTF8(doc, "winner_username", result->winner_username);
+    BSON_APPEND_UTF8(doc, "loser_id", result->loser_id);
+    BSON_APPEND_UTF8(doc, "loser_username", result->loser_username);
+    
+    BSON_APPEND_INT32(doc, "total_turns", result->total_turns);
+    BSON_APPEND_INT64(doc, "game_duration", result->game_duration);
+    bson_append_date_time(doc, "started_at", -1, result->started_at);
+    bson_append_date_time(doc, "ended_at", -1, result->ended_at);
+    
+    // ELO changes
+    bson_t elo_doc;
+    BSON_APPEND_DOCUMENT_BEGIN(doc, "elo_changes", &elo_doc);
+    BSON_APPEND_INT32(&elo_doc, "winner_old", result->winner_old_elo);
+    BSON_APPEND_INT32(&elo_doc, "winner_new", result->winner_new_elo);
+    BSON_APPEND_INT32(&elo_doc, "loser_old", result->loser_old_elo);
+    BSON_APPEND_INT32(&elo_doc, "loser_new", result->loser_new_elo);
+    bson_append_document_end(doc, &elo_doc);
+    
+    // Stats
+    bson_t stats_doc;
+    BSON_APPEND_DOCUMENT_BEGIN(doc, "stats", &stats_doc);
+    BSON_APPEND_INT32(&stats_doc, "winner_hits", result->winner_hits);
+    BSON_APPEND_INT32(&stats_doc, "winner_misses", result->winner_misses);
+    BSON_APPEND_INT32(&stats_doc, "loser_hits", result->loser_hits);
+    BSON_APPEND_INT32(&stats_doc, "loser_misses", result->loser_misses);
+    bson_append_document_end(doc, &stats_doc);
+
+    bson_error_t error;
+    bool success = mongoc_collection_insert_one(collection, doc, NULL, NULL, &error);
+
+    if (!success) {
+        log_error("Failed to save game result: %s", error.message);
+    }
+
+    bson_destroy(doc);
+    mongoc_collection_destroy(collection);
+    mongo_release_client(g_mongo_ctx, client);
+
+    return success;
+}
+
 shot_result_t game_process_shot(const char *game_id, const char *player_id, int row, int col) {
     shot_result_t result = {false, false, 0, false};
     
@@ -595,7 +796,31 @@ shot_result_t game_process_shot(const char *game_id, const char *player_id, int 
     
     log_info("Shot result: hit=%d, sunk=%d, type=%d, game_over=%d",
              result.is_hit, result.is_sunk, result.sunk_ship_type, result.game_over);
-    
+
+    game_move_log_t move_log = {0};
+    strncpy(move_log.player_id, player_id, 63);
+
+    move_log.row = row;
+    move_log.col = col;
+    move_log.is_hit = result.is_hit;
+    move_log.is_sunk = result.is_sunk;
+    move_log.sunk_ship_type = result.sunk_ship_type;
+    // Lấy số lượt hiện tại (tính qua số shot trong board hoặc cache game)
+    // Tạm thời lấy timestamp
+    move_log.timestamp = (int32_t)time(NULL) * 1000;
+
+    user_t *shooter = user_find_by_id(player_id);
+    if (shooter) {
+        strncpy(move_log.player_username, shooter->username, 31);
+        user_free(shooter);
+    }
+
+    if (!game_log_move(game_id, &move_log)) {
+        log_error("Failed to save move log for game %s", game_id);
+    } else {
+        log_info("📝 Move logged successfully for player %s", player_id);
+    }
+
     if (result.game_over) {
         game->state = GAME_STATE_FINISHED;
         log_info("🏆 Game over! Winner: %s", player_id);
@@ -651,6 +876,137 @@ bool game_end(const char *game_id, const char *winner_id) {
     bson_destroy(update);
     mongoc_collection_destroy(collection);
     mongo_release_client(g_mongo_ctx, client);
+
+    game_result_t result = {0};
+    strncpy(result.game_id, game_id, 64);
+    strncpy(result.winner_id, winner_id, 63);
+    
+    const char *loser_id = (strcmp(winner_id, game->player1_id) == 0) 
+                           ? game->player2_id : game->player1_id;
+    strncpy(result.loser_id, loser_id, 63);
+    
+    // Get usernames
+    user_t *winner = user_find_by_id(winner_id);
+    user_t *loser = user_find_by_id(loser_id);
+    
+    if (winner) {
+        strncpy(result.winner_username, winner->username, 31);
+        result.winner_old_elo = winner->elo_rating;
+    }
+    
+    if (loser) {
+        strncpy(result.loser_username, loser->username, 31);
+        result.loser_old_elo = loser->elo_rating;
+    }
+    
+    // Calculate stats
+    result.total_turns = game->num_shots;
+    result.started_at = game->created_at;
+    result.ended_at = (int64_t)time(NULL) * 1000;
+    result.game_duration = (result.ended_at - result.started_at) / 1000;
+    
+    // Calculate hits/misses (iterate through logs if needed, or track in game struct)
+    // For now, simple approximation
+    result.winner_hits = 17; // Total ship cells
+    result.winner_misses = result.total_turns / 2 - result.winner_hits;
+    
+    // Update ELO - bổ sung nốt
+    // elo_update_after_match(winner_id, loser_id);
+    
+    // Reload users to get new ELO
+    user_free(winner);
+    user_free(loser);
+    winner = user_find_by_id(winner_id);
+    loser = user_find_by_id(loser_id);
+    
+    if (winner) result.winner_new_elo = winner->elo_rating;
+    if (loser) result.loser_new_elo = loser->elo_rating;
+    
+    // Save result
+    game_save_result(&result);
+
+    int log_count = 0;
+    game_move_log_t *logs = game_get_logs(game_id, &log_count);
+    
+    log_info("📋 Retrieved %d move logs for game %s", log_count, game_id);
+    
+    // ✅ NEW: Send MSG_GAME_RESULT to both players
+    message_t result_msg = {0};
+    result_msg.type = MSG_GAME_RESULT;
+    strncpy(result_msg.payload.game_result.game_id, game_id, 64);
+    strncpy(result_msg.payload.game_result.winner_id, result.winner_id, 63);
+    strncpy(result_msg.payload.game_result.winner_username, result.winner_username, 31);
+    strncpy(result_msg.payload.game_result.loser_username, result.loser_username, 31);
+    result_msg.payload.game_result.total_turns = result.total_turns;
+    result_msg.payload.game_result.game_duration = result.game_duration;
+    result_msg.payload.game_result.winner_old_elo = result.winner_old_elo;
+    result_msg.payload.game_result.winner_new_elo = result.winner_new_elo;
+    result_msg.payload.game_result.loser_old_elo = result.loser_old_elo;
+    result_msg.payload.game_result.loser_new_elo = result.loser_new_elo;
+    result_msg.payload.game_result.winner_hits = result.winner_hits;
+    result_msg.payload.game_result.winner_misses = result.winner_misses;
+    result_msg.payload.game_result.loser_hits = result.loser_hits;
+    result_msg.payload.game_result.loser_misses = result.loser_misses;
+    
+    if (game->player1_socket > 0) {
+        tcp_send_message(game->player1_socket, &result_msg);
+        log_info("✅ Sent MSG_GAME_RESULT to player1 (socket %d)", game->player1_socket);
+    }
+    if (game->player2_socket > 0) {
+        tcp_send_message(game->player2_socket, &result_msg);
+        log_info("✅ Sent MSG_GAME_RESULT to player2 (socket %d)", game->player2_socket);
+    }
+
+    if (logs && log_count > 0) {
+        // Send logs in chunks (max 50 logs per message to avoid buffer overflow)
+        int chunk_size = 50;
+        int chunks = (log_count + chunk_size - 1) / chunk_size;
+        
+        for (int chunk_idx = 0; chunk_idx < chunks; chunk_idx++) {
+            message_t log_msg = {0};
+            log_msg.type = MSG_GAME_LOGS;
+            
+            strncpy(log_msg.payload.game_logs.game_id, game_id, 64);
+            log_msg.payload.game_logs.chunk_index = chunk_idx;
+            log_msg.payload.game_logs.total_chunks = chunks;
+            
+            int start = chunk_idx * chunk_size;
+            int end = (start + chunk_size > log_count) ? log_count : start + chunk_size;
+            log_msg.payload.game_logs.log_count = end - start;
+            
+            // Copy logs
+            for (int i = start; i < end; i++) {
+                int log_idx = i - start;
+                strncpy(log_msg.payload.game_logs.logs[log_idx].player_username, 
+                        logs[i].player_username, 31);
+                log_msg.payload.game_logs.logs[log_idx].row = logs[i].row;
+                log_msg.payload.game_logs.logs[log_idx].col = logs[i].col;
+                log_msg.payload.game_logs.logs[log_idx].is_hit = logs[i].is_hit;
+                log_msg.payload.game_logs.logs[log_idx].is_sunk = logs[i].is_sunk;
+                log_msg.payload.game_logs.logs[log_idx].sunk_ship_type = logs[i].sunk_ship_type;
+                log_msg.payload.game_logs.logs[log_idx].turn_number = logs[i].turn_number;
+                log_msg.payload.game_logs.logs[log_idx].timestamp = logs[i].timestamp;
+            }
+            
+            // Send to both players
+            if (game->player1_socket > 0) {
+                tcp_send_message(game->player1_socket, &log_msg);
+            }
+            if (game->player2_socket > 0) {
+                tcp_send_message(game->player2_socket, &log_msg);
+            }
+            
+            log_info("📤 Sent log chunk %d/%d (%d logs)", 
+                     chunk_idx + 1, chunks, end - start);
+        }
+        
+        free(logs);
+    }
+    
+    log_info("Game result sent to both players");
+    
+    if (winner) user_free(winner);
+    if (loser) user_free(loser);
     
     return success;
 }

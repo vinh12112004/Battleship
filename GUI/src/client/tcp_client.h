@@ -39,7 +39,9 @@ typedef enum {
     MSG_AUTH_TOKEN = 27,
     MSG_TURN_WARNING = 28,
     MSG_GAME_TIMEOUT = 29,
-    MSG_CHAT_MESSAGE = 30
+    MSG_CHAT_MESSAGE = 30,
+    MSG_GAME_RESULT = 31,
+    MSG_GAME_LOGS = 32, 
 } msg_type_t;
 
 typedef struct __attribute__((packed)) {
