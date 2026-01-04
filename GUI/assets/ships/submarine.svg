@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 300 120"
+     width="300"
+     height="120">
+
+  <defs>
+    <linearGradient id="subGradModern" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a1a"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+  </defs>
+
+  <ellipse cx="150" cy="65" rx="135" ry="20"
+           fill="url(#subGradModern)"/>
+
+  <path d="M120,65 L125,35 L175,35 L190,65 Z"
+        fill="#0a0a0a"/>
+
+</svg>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 500 120"
+     width="500"
+     height="120">
+
+  <defs>
+    <linearGradient id="carrierGradModern" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2a2a"/>
+      <stop offset="100%" stop-color="#0a0a0a" stop-opacity="0.8"/>
+    </linearGradient>
+
+    <filter id="carrierGlow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Hull -->
+  <path d="M15,85 L470,85 L490,65 L485,58 L10,58 L5,65 Z"
+        fill="url(#carrierGradModern)"
+        filter="url(#carrierGlow)"/>
+
+  <!-- Deck -->
+  <path d="M0,52 L495,52 L498,48 L3,48 Z"
+        fill="#1a1a1a" opacity="0.9"/>
+
+  <!-- Runway -->
+  <line x1="50" y1="50" x2="450" y2="50"
+        stroke="#FF6B35" stroke-width="2" opacity="0.8"/>
+
+  <!-- Island -->
+  <rect x="360" y="20" width="75" height="28" rx="2" fill="#0d0d0d"/>
+  <polygon points="360,20 365,10 430,10 435,20" fill="#0d0d0d"/>
+
+  <!-- Windows -->
+  <rect x="368" y="25" width="8" height="10" fill="#00D9FF"/>
+  <rect x="380" y="25" width="8" height="10" fill="#00D9FF" opacity="0.8"/>
+  <rect x="392" y="25" width="8" height="10" fill="#00D9FF"/>
+  <rect x="404" y="25" width="8" height="10" fill="#00D9FF" opacity="0.7"/>
+  <rect x="416" y="25" width="8" height="10" fill="#00D9FF" opacity="0.9"/>
+
+</svg>
