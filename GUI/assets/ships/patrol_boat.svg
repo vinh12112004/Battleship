@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 200 120"
+     width="200"
+     height="120">
+
+  <defs>
+    <linearGradient id="patrolGradModern" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a1a"/>
+      <stop offset="100%" stop-color="#0d0d0d"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M8,85 L175,85 L193,62 L188,55 L25,55 L15,62 Z"
+        fill="url(#patrolGradModern)"/>
+
+  <polygon points="100,55 110,35 160,35 168,55"
+           fill="#0d0d0d"/>
+
+</svg>

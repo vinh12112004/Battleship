@@ -6,6 +6,9 @@ from ..core.protocol import MessageType, TCPMessage
 from ..core.game_state import GameStateManager, Ship
 from ..utils.logger import logger
 from ..utils.constants import COLORS, GRID_SIZE, SHIP_TYPES
+from ..utils.icon_loader import IconManager
+from PyQt6.QtCore import QSize
+from PyQt6.QtWidgets import QListWidgetItem
 
 class ShipPlacementWindow(QMainWindow):
     """Ship placement window before game starts"""
@@ -214,18 +217,24 @@ class ShipPlacementWindow(QMainWindow):
         
         # ✅ Add ships with proper formatting
         for ship_type, info in SHIP_TYPES.items():
-            # Get ship icon based on type
-            ship_icon = {
-                5: "🚢",  # Carrier
-                4: "⚓",  # Battleship
-                3: "🛥️",  # Destroyer
-                2: "🚤",  # Submarine
-                1: "⛵"   # Patrol
-            }.get(info['length'], "🚢")
-            
-            item_text = f"{ship_icon} {info['name']}\n   Length: {info['length']} cells"
-            self.ship_list.addItem(item_text)
-            self.ship_list.item(self.ship_list.count() - 1).setData(Qt.ItemDataRole.UserRole, ship_type)
+            item = QListWidgetItem()
+
+            # Text
+            item.setText(f"{info['name']}\n   Length: {info['length']} cells")
+
+            # SVG icon
+            icon = IconManager.SHIPS.get(ship_type)
+            if icon:
+                item.setIcon(icon)
+
+            # Store ship_type
+            item.setData(Qt.ItemDataRole.UserRole, ship_type)
+
+            # Optional: tăng chiều cao item cho đẹp
+            item.setSizeHint(QSize(0, 48))
+
+            self.ship_list.addItem(item)
+
         
         self.ship_list.itemClicked.connect(self.on_ship_selected)
         layout.addWidget(self.ship_list)
@@ -499,32 +508,26 @@ class ShipPlacementWindow(QMainWindow):
                 "• Too close to another ship")
     
     def highlight_ship_on_board(self, ship):
-        """Highlight placed ship on board"""
-        color = SHIP_TYPES.get(ship.ship_type, {}).get('color', COLORS['ship'])
-        
+        icon = IconManager.SHIPS.get(ship.ship_type)
+
         for i in range(ship.length):
-            if ship.is_horizontal:
-                target_row = ship.row
-                target_col = ship.col + i
-            else:
-                target_row = ship.row + i
-                target_col = ship.col
-            
-            cell = self.cells.get((target_row, target_col))
-            
+            r = ship.row + (0 if ship.is_horizontal else i)
+            c = ship.col + (i if ship.is_horizontal else 0)
+
+            cell = self.cells.get((r, c))
             if cell:
+                cell.setText("")                 # ❌ bỏ text
+                cell.setIcon(icon)               # ✅ SVG
+                cell.setIconSize(QSize(32, 32))
+
                 cell.setStyleSheet(f"""
                     QPushButton {{
-                        background-color: {color};
+                        background-color: {COLORS['ship']};
                         border: 3px solid {COLORS['primary']};
-                        border-radius: 5px;
+                        border-radius: 6px;
                     }}
                 """)
-                cell.setText("⚓")
-                cell.setFont(QFont("Arial", 18))
-                
-                # ✅ DEBUG
-                print(f"[DEBUG] Highlighted cell ({target_row}, {target_col})")
+
     
     def submit_placement(self):
         """Submit ship placement to server"""
