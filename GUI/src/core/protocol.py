@@ -39,6 +39,7 @@ class MessageType(IntEnum):
     MSG_CHAT_MESSAGE = 30
     MSG_GAME_RESULT = 31
     MSG_GAME_LOGS = 32
+    MSG_RESIGN = 33
 @dataclass
 class TCPMessage:
     """TCP message wrapper"""
@@ -186,6 +187,11 @@ class TCPMessage:
             token = p.get('token', '').encode('utf-8')[:511] + b'\x00'
             return token.ljust(512, b'\x00')
         
+        elif self.type == MessageType.MSG_RESIGN:
+            game_id = p.get('game_id', '').encode('utf-8')[:64] + b'\x00'
+            return game_id.ljust(65, b'\x00') 
+
+
         else:
             return b''
     

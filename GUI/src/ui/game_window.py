@@ -583,9 +583,49 @@ class GameWindow(QMainWindow):
         self.opponent_misses_label.setText(f"{self.WATER} Opponent Misses: {self.game_state.opponent_misses}")
 
     def resign(self):
-        reply = QMessageBox.question(self, "Resign", "Are you sure?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        """Xử lý khi người chơi đầu hàng"""
+        reply = QMessageBox.question(
+            self, 
+            "Resign", 
+            "Are you sure you want to resign?\n\nYou will lose this game.", 
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
         if reply == QMessageBox.StandardButton.Yes:
-            self.game_finished.emit()
+            # ✅ 1. Đánh dấu game đã kết thúc
+            self.game_ended = True
+            
+            # ✅ 2. Vô hiệu hóa toàn bộ UI
+            self.centralWidget().setEnabled(False)
+            
+            # ✅ 3. Cập nhật turn indicator
+            self.turn_indicator.setText("🏳️ YOU RESIGNED")
+            self.turn_indicator.setStyleSheet(f"""
+                QLabel {{
+                    background-color: {COLORS['error']}; 
+                    color: white; 
+                    padding: 12px 20px; 
+                    border-radius: 8px;
+                    font-weight: bold;
+                }}
+            """)
+            
+            # ✅ 4. Lưu lý do kết thúc
+            self.game_end_reason = "🏳️ RESIGNED"
+            
+            # ✅ 5. Gửi message resign tới server
+            msg = TCPMessage(
+                type=MessageType.MSG_RESIGN,
+                payload={'game_id': self.game_id},
+                token=self.tcp_client.token
+            )
+            self.tcp_client.send_message(msg)
+            
+            logger.info(f"[GameWindow] Player {self.username} resigned from game {self.game_id}")
+            
+            # ✅ 6. Đợi server xử lý và gửi MSG_GAME_RESULT
+            # Không cần emit game_finished ở đây vì server sẽ gửi MSG_GAME_RESULT
+            # và handle_game_result_ui sẽ xử lý việc hiển thị dialog và đóng cửa sổ
             
     def handle_game_logs_ui(self, payload):
         self.game_logs.extend(payload.get("logs", []))

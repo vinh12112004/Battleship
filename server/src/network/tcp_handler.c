@@ -101,6 +101,10 @@ void handle_message(int client_sock, message_t *msg) {
         case MSG_AUTH_TOKEN:
             handle_auth_token(client_sock, msg->token);
             break;
+        
+        case MSG_RESIGN:
+            handle_player_resign(client_sock, &msg->payload.resign, msg->token);
+            break;
         default:
             log_warn("Unknown message type: %d from client %d", msg->type, client_sock);
             break;
@@ -848,5 +852,44 @@ void handle_challenge_cancel(int client_sock, challenge_response_payload *payloa
     log_info("Challenge cancelled: %s", payload->challenge_id);
     
     challenge_remove(payload->challenge_id);
+    free(user_id);
+}
+
+void handle_player_resign(int client_sock, resign_payload *payload, const char *token) {
+    // ✅ Verify token
+    char *user_id = jwt_verify(token);
+    if (!user_id) {
+        log_warn("Invalid token for player resign");
+        message_t resp = {0};
+        resp.type = MSG_AUTH_FAILED;
+        strncpy(resp.payload.auth_fail.reason, "Invalid token", 63);
+        tcp_send_message(client_sock, &resp);
+        return;
+    }
+
+    // Find game for this player
+    game_session_t *game = game_find_by_player(user_id);
+    if (!game) {
+        log_error("Player %s tried to resign but no active game found", user_id);
+        free(user_id);
+        return;
+    }
+
+    // Determine winner (opponent)
+    const char *winner_id = (strcmp(game->player1_id, user_id) == 0) 
+                            ? game->player2_id 
+                            : game->player1_id;
+
+    log_info("Player %s resigning in game %s. Winner: %s", user_id, game->game_id, winner_id);
+
+    // End the game
+    bool success = game_end(game->game_id, winner_id);
+
+    if (!success) {
+        log_error("Failed to end game %s after player %s resigned", game->game_id, user_id);
+    } else {
+        log_info("Game %s ended due to resignation by player %s", game->game_id, user_id);
+    }
+
     free(user_id);
 }

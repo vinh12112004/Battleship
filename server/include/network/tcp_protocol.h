@@ -41,6 +41,7 @@ typedef enum {
     MSG_CHAT_MESSAGE = 30,
     MSG_GAME_RESULT = 31,
     MSG_GAME_LOGS = 32,
+    MSG_RESIGN = 33,
 } msg_type;
 
 typedef struct __attribute__((packed)) {
@@ -156,6 +157,9 @@ typedef struct __attribute__((packed)) {
 } game_logs_payload;
 
 
+typedef struct __attribute__((packed)) {
+    char game_id[65];
+} resign_payload;
 
 
 typedef struct __attribute__((packed)) {
@@ -197,6 +201,7 @@ typedef struct __attribute__((packed)) {
         game_timeout_payload game_timeout;
         game_result_payload game_result; 
         game_logs_payload game_logs;
+        resign_payload resign;
     } payload;
 } message_t;
 
