@@ -126,13 +126,38 @@ typedef struct __attribute__((packed)) {
     uint32_t timestamp;
 } game_log_entry_t;
 
+typedef struct {
+    ship_type_t type;
+    int start_row;
+    int start_col;
+    bool is_horizontal;
+} ship_log_t;
+
 typedef struct __attribute__((packed)) {
     char game_id[65];
-    int chunk_index;      // Current chunk (0-based)
-    int total_chunks;     // Total number of chunks
-    int log_count;        // Number of logs in this chunk
-    game_log_entry_t logs[50];  // Max 50 logs per message
+
+    char player1_id[64];
+    char player1_username[32];
+
+    char player2_id[64];
+    char player2_username[32];
+
+    int chunk_index;
+    int total_chunks;
+    int log_count;
+
+    game_log_entry_t logs[50];
+
+    int player1_ship_count;
+    ship_log_t player1_ships[MAX_SHIPS];
+
+    int player2_ship_count;
+    ship_log_t player2_ships[MAX_SHIPS];
 } game_logs_payload;
+
+
+
+
 typedef struct __attribute__((packed)) {
     char game_id[65];
     char winner_id[64];

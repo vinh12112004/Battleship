@@ -588,16 +588,25 @@ class GameWindow(QMainWindow):
             self.game_finished.emit()
             
     def handle_game_logs_ui(self, payload):
-        """✅ Xử lý logs (có thể nhận nhiều chunks)"""
-        logger.info(f"[GameWindow] Received log chunk {payload['chunk_index']+1}/{payload['total_chunks']}")
-        
-        # Append logs
-        self.game_logs.extend(payload['logs'])
-        
-        # Nếu đã nhận đủ tất cả chunks
-        if payload['chunk_index'] + 1 == payload['total_chunks']:
-            logger.info(f"[GameWindow] All log chunks received ({len(self.game_logs)} logs)")
-            # Logs đã đủ, chờ result hoặc hiển thị ngay nếu result đã có
+        self.game_logs.extend(payload.get("logs", []))
+
+        if payload["chunk_index"] + 1 == payload["total_chunks"]:
+
+            if payload["player1_username"] == self.username:
+                self.my_ships = payload["player1_ships"]
+                self.enemy_ships = payload["player2_ships"]
+                self.my_player_index = 1
+            else:
+                self.my_ships = payload["player2_ships"]
+                self.enemy_ships = payload["player1_ships"]
+                self.my_player_index = 2
+
+            logger.critical("=== PLAYER MAPPING ===")
+            logger.critical(f"I am player{self.my_player_index}")
+            logger.critical(f"My ships: {len(self.my_ships)}")
+            logger.critical(f"Enemy ships: {len(self.enemy_ships)}")
+
+
             
     def handle_game_result_ui(self, payload):
         """✅ Hiển thị kết quả + logs (Có cơ chế chống treo)"""
@@ -641,12 +650,18 @@ class GameWindow(QMainWindow):
                 result_data['winner_username'] = result_data.get('winner_id', 'Unknown')
 
             result_dialog = GameResultDialog(
-                result_data, 
-                self.game_logs, 
-                self.username, 
-                reason=final_reason, # ✅ Truyền lý do vào
+                result_data,
+                logs_data={
+                    "logs": self.game_logs,
+                    "my_ships": self.my_ships,
+                    "enemy_ships": self.enemy_ships
+                },
+                my_username=self.username,
+                reason=final_reason,
                 parent=self
             )
+
+
             result_dialog.exec()
             
             # 4. Sau khi đóng Dialog -> Bắn tín hiệu về Dashboard

@@ -973,7 +973,11 @@ bool game_end(const char *game_id, const char *winner_id) {
             int start = chunk_idx * chunk_size;
             int end = (start + chunk_size > log_count) ? log_count : start + chunk_size;
             log_msg.payload.game_logs.log_count = end - start;
-            
+            log_msg.payload.game_logs.player1_ship_count =
+                game->player1_board.ship_count;
+            log_msg.payload.game_logs.player2_ship_count =
+                game->player2_board.ship_count;
+
             // Copy logs
             for (int i = start; i < end; i++) {
                 int log_idx = i - start;
@@ -986,8 +990,59 @@ bool game_end(const char *game_id, const char *winner_id) {
                 log_msg.payload.game_logs.logs[log_idx].sunk_ship_type = logs[i].sunk_ship_type;
                 log_msg.payload.game_logs.logs[log_idx].turn_number = logs[i].turn_number;
                 log_msg.payload.game_logs.logs[log_idx].timestamp = logs[i].timestamp;
+                
             }
-            
+            for (int i = 0; i < game->player1_board.ship_count; i++) {
+                ship_t *s = &game->player1_board.ships[i];
+
+                log_msg.payload.game_logs.player1_ships[i].type = s->type;
+                log_msg.payload.game_logs.player1_ships[i].start_row = s->start_row;
+                log_msg.payload.game_logs.player1_ships[i].start_col = s->start_col;
+                log_msg.payload.game_logs.player1_ships[i].is_horizontal = s->is_horizontal;
+
+                log_debug("P1 Ship[%d] type=%d row=%d col=%d horizontal=%d",
+                        i, s->type, s->start_row, s->start_col, s->is_horizontal);
+            }
+
+            for (int i = 0; i < game->player2_board.ship_count; i++) {
+                ship_t *s = &game->player2_board.ships[i];
+
+                log_msg.payload.game_logs.player2_ships[i].type = s->type;
+                log_msg.payload.game_logs.player2_ships[i].start_row = s->start_row;
+                log_msg.payload.game_logs.player2_ships[i].start_col = s->start_col;
+                log_msg.payload.game_logs.player2_ships[i].is_horizontal = s->is_horizontal;
+
+                log_debug("P2 Ship[%d] type=%d row=%d col=%d horizontal=%d",
+                        i, s->type, s->start_row, s->start_col, s->is_horizontal);
+            }
+
+            // Player identity (RẤT QUAN TRỌNG)
+            strncpy(log_msg.payload.game_logs.player1_id,
+                    game->player1_id, 63);
+            strncpy(log_msg.payload.game_logs.player2_id,
+                    game->player2_id, 63);
+
+            user_t *u1 = user_find_by_id(game->player1_id);
+            user_t *u2 = user_find_by_id(game->player2_id);
+
+            if (u1) {
+                strncpy(log_msg.payload.game_logs.player1_username,
+                        u1->username, 31);
+                user_free(u1);
+            }
+
+            if (u2) {
+                strncpy(log_msg.payload.game_logs.player2_username,
+                        u2->username, 31);
+                user_free(u2);
+            }
+            log_debug("player1_id=%s username=%s",
+                      log_msg.payload.game_logs.player1_id,
+                      log_msg.payload.game_logs.player1_username);
+            log_debug("player2_id=%s username=%s",
+                      log_msg.payload.game_logs.player2_id,
+                      log_msg.payload.game_logs.player2_username);
+
             // Send to both players
             if (game->player1_socket > 0) {
                 tcp_send_message(game->player1_socket, &log_msg);

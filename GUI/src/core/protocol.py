@@ -402,43 +402,97 @@ class TCPMessage:
                 return {}
         elif msg_type == MessageType.MSG_GAME_LOGS:
             try:
-                game_id = data[0:65].decode('utf-8').rstrip('\x00')
-                chunk_index = struct.unpack_from('<i', data, 65)[0]
-                total_chunks = struct.unpack_from('<i', data, 69)[0]
-                log_count = struct.unpack_from('<i', data, 73)[0]
-                
+                offset = 0
+
+                game_id = data[offset:offset+65].decode().rstrip('\x00')
+                offset += 65
+
+                player1_id = data[offset:offset+64].decode().rstrip('\x00')
+                offset += 64
+                player1_username = data[offset:offset+32].decode().rstrip('\x00')
+                offset += 32
+
+                player2_id = data[offset:offset+64].decode().rstrip('\x00')
+                offset += 64
+                player2_username = data[offset:offset+32].decode().rstrip('\x00')
+                offset += 32
+
+                chunk_index = struct.unpack_from('<i', data, offset)[0]
+                offset += 4
+                total_chunks = struct.unpack_from('<i', data, offset)[0]
+                offset += 4
+                log_count = struct.unpack_from('<i', data, offset)[0]
+                offset += 4
+
+                # ===== LOGS =====
                 logs = []
-                offset = 77  # Bắt đầu đọc mảng logs
-                
-                for i in range(log_count):
-                    # Kích thước mỗi log: 32 (user) + 4(row) + 4(col) + 1(hit) + 1(sunk) + 4(type) + 4(turn) + 4(time) = 54 bytes
-                    
-                    # Do struct C có padding (is_hit, is_sunk là bool 1 byte, kế đó là int 4 byte)
-                    # Layout C (packed): [User 32][Row 4][Col 4][Hit 1][Sunk 1][Type 4][Turn 4][Time 4]
-                    # Tổng cộng đúng 54 bytes nếu packed.
-                    
+                LOG_SIZE = 54
+                MAX_LOGS = 50
+
+                for _ in range(log_count):
                     log = {
-                        'player_username': data[offset:offset+32].decode('utf-8').rstrip('\x00'),
-                        'row': struct.unpack_from('<i', data, offset+32)[0],
-                        'col': struct.unpack_from('<i', data, offset+36)[0],
-                        'is_hit': bool(data[offset+40]),
-                        'is_sunk': bool(data[offset+41]),
-                        'sunk_ship_type': struct.unpack_from('<i', data, offset+42)[0],
-                        'turn_number': struct.unpack_from('<i', data, offset+46)[0],
-                        'timestamp': struct.unpack_from('<I', data, offset+50)[0] # ✅ Dùng 'I' (4 bytes)
+                        "player_username": data[offset:offset+32].decode().rstrip('\x00'),
+                        "row": struct.unpack_from('<i', data, offset+32)[0],
+                        "col": struct.unpack_from('<i', data, offset+36)[0],
+                        "is_hit": bool(data[offset+40]),
+                        "is_sunk": bool(data[offset+41]),
+                        "sunk_ship_type": struct.unpack_from('<i', data, offset+42)[0],
+                        "turn_number": struct.unpack_from('<i', data, offset+46)[0],
+                        "timestamp": struct.unpack_from('<I', data, offset+50)[0],
                     }
                     logs.append(log)
-                    offset += 54 # ✅ Giảm từ 58 xuống 54
-                
+                    offset += LOG_SIZE
+
+                # skip unused logs
+                offset = (
+                    65 + 64 + 32 + 64 + 32 + 12 +
+                    MAX_LOGS * LOG_SIZE
+                )
+
+                # ===== PLAYER 1 SHIPS =====
+                player1_ship_count = struct.unpack_from('<i', data, offset)[0]
+                offset += 4
+
+                player1_ships = []
+                for _ in range(player1_ship_count):
+                    player1_ships.append({
+                        "type": struct.unpack_from('<i', data, offset)[0],
+                        "start_row": struct.unpack_from('<i', data, offset+4)[0],
+                        "start_col": struct.unpack_from('<i', data, offset+8)[0],
+                        "is_horizontal": bool(data[offset+12]),
+                    })
+                    offset += 16
+
+                # ===== PLAYER 2 SHIPS =====
+                player2_ship_count = struct.unpack_from('<i', data, offset)[0]
+                offset += 4
+
+                player2_ships = []
+                for _ in range(player2_ship_count):
+                    player2_ships.append({
+                        "type": struct.unpack_from('<i', data, offset)[0],
+                        "start_row": struct.unpack_from('<i', data, offset+4)[0],
+                        "start_col": struct.unpack_from('<i', data, offset+8)[0],
+                        "is_horizontal": bool(data[offset+12]),
+                    })
+                    offset += 16
+
                 return {
-                    'game_id': game_id,
-                    'chunk_index': chunk_index,
-                    'total_chunks': total_chunks,
-                    'log_count': log_count,
-                    'logs': logs
+                    "game_id": game_id,
+
+                    "player1_id": player1_id,
+                    "player1_username": player1_username,
+                    "player2_id": player2_id,
+                    "player2_username": player2_username,
+
+                    "chunk_index": chunk_index,
+                    "total_chunks": total_chunks,
+                    "logs": logs,
+
+                    "player1_ships": player1_ships,
+                    "player2_ships": player2_ships,
                 }
+
             except Exception as e:
                 logger.error(f"❌ Error parsing MSG_GAME_LOGS: {e}")
                 return {}
-        else:
-            return {}

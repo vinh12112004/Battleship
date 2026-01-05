@@ -5,6 +5,8 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
 from ..utils.constants import COLORS
 from ..utils.logger import logger
+from PyQt6.QtCore import QTimer
+from .replay_board import ReplayBoard
 from datetime import datetime
 
 class GameResultDialog(QDialog):
@@ -14,6 +16,30 @@ class GameResultDialog(QDialog):
         super().__init__(parent)
         self.result = result_data
         self.logs = logs_data
+        # logs_data là dict
+        raw_logs = logs_data.get("logs", [])
+
+        # ✅ CHỈ LẤY LOG DICTIONARY (REPLAY)
+        self.replay_logs = sorted(
+            [x for x in raw_logs if isinstance(x, dict)],
+            key=lambda x: x.get("turn_number", 0)
+        )
+
+        self.my_ships = logs_data.get("my_ships", [])
+        self.enemy_ships = logs_data.get("enemy_ships", [])
+
+        logger.critical("=== GAME RESULT SHIPS FINAL ===")
+        logger.critical("My ships: %s", self.my_ships)
+        logger.critical("Enemy ships: %s", self.enemy_ships)
+
+
+        # logger.critical("=== GAME RESULT SHIPS FINAL ===")
+        # logger.critical("P1 ships: %s", self.player1_ships)
+        # logger.critical("P2 ships: %s", self.player2_ships)
+        # logger.critical("P1 username: %s", self.player1_username)
+        # logger.critical("P2 username: %s", self.player2_username)
+        self.replay_index = 0 
+
         self.my_username = my_username
         self.reason = reason
         
@@ -205,89 +231,132 @@ class GameResultDialog(QDialog):
     def create_logs_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(0, 10, 0, 0)
-        
-        table = QTableWidget()
-        table.setColumnCount(5)
-        table.setHorizontalHeaderLabels(["#", "Player", "Pos", "Result", "Time"])
-        
-        # Style headers
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # Turn
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)          # Player
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) # Pos
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)          # Result
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents) # Time
-        
-        table.setRowCount(len(self.logs))
-        table.setAlternatingRowColors(True) # Bật tính năng đổi màu dòng chẵn lẻ
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        table.setShowGrid(False) # Bỏ grid line để nhìn thoáng hơn
-        
-        for i, log in enumerate(self.logs):
-            # 1. Turn
-            t_item = QTableWidgetItem(str(log.get('turn_number', i+1)))
-            t_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            table.setItem(i, 0, t_item)
-            
-            # 2. Player
-            p_name = log.get('player_username', 'Unknown')
-            p_item = QTableWidgetItem(p_name)
-            if p_name == self.my_username:
-                p_item.setForeground(QColor("#60a5fa")) # Blue for me
-                p_item.setFont(self.font_bold)
-            table.setItem(i, 1, p_item)
-            
-            # 3. Action (Position format: (row, col))
-            row = log.get('row', 0)
-            col = log.get('col', 0)
-            # Backend lưu 0-9, hiển thị 0-9 cho đồng bộ với yêu cầu
-            pos_str = f"({row}, {col})"
-            pos_item = QTableWidgetItem(pos_str)
-            pos_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            table.setItem(i, 2, pos_item)
-            
-            # 4. Result (Hit/Miss/Sunk)
-            res_str = ""
-            res_color = QColor("#94a3b8") # Grey default
-            
-            if log.get('is_sunk'):
-                ship_type = log.get('sunk_ship_type', 0)
-                ship_map = {1: "Patrol", 2: "Submarine", 3: "Destroyer", 4: "Battleship", 5: "Carrier"}
-                ship_name = ship_map.get(ship_type, "Ship")
-                res_str = f"SUNK {ship_name}"
-                res_color = QColor("#facc15") # Yellow
-            elif log.get('is_hit'):
-                res_str = "HIT"
-                res_color = QColor("#ef4444") # Red
-            else:
-                res_str = "MISS"
-            
-            res_item = QTableWidgetItem(res_str)
-            res_item.setForeground(res_color)
-            res_item.setFont(self.font_bold)
-            res_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            table.setItem(i, 3, res_item)
-            
-            # 5. Time (Format HH:MM:SS)
-            ts = log.get('timestamp', 0)
-            if ts > 0:
-                try:
-                    # Nếu timestamp là milliseconds
-                    t_obj = datetime.fromtimestamp(ts / 1000)
-                    time_str = t_obj.strftime("%H:%M:%S")
-                except:
-                    time_str = "Err"
-            else:
-                time_str = "-"
-            
-            time_item = QTableWidgetItem(time_str)
-            time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            table.setItem(i, 4, time_item)
+        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)
 
-        layout.addWidget(table)
+        # ===== Controls =====
+        ctrl = QHBoxLayout()
+        self.btn_prev = QPushButton("◀ Previous")
+        self.btn_next = QPushButton("Next ▶")
+
+        self.btn_prev.clicked.connect(self.replay_prev)
+        self.btn_next.clicked.connect(self.replay_next)
+
+        ctrl.addWidget(self.btn_prev)
+        ctrl.addWidget(self.btn_next)
+        ctrl.addStretch()
+
+        layout.addLayout(ctrl)
+
+        # ===== DEBUG SHIPS =====
+        # logger.critical("=== GAME RESULT SHIPS DEBUG ===")
+        # logger.critical("My username: %s", self.my_username)
+        # logger.critical("Player1: %s", self.result.get("player1"))
+        # logger.critical("Player2: %s", self.result.get("player2"))
+
+        # logger.critical("Player1 ships count: %d", len(self.player1_ships))
+        # logger.critical("Player1 ships data: %s", self.player1_ships)
+
+        # logger.critical("Player2 ships count: %d", len(self.player2_ships))
+        # logger.critical("Player2 ships data: %s", self.player2_ships)
+        # ===== Boards =====
+        boards = QHBoxLayout()
+        self.enemy_board = ReplayBoard("Enemy Board")
+        self.my_board = ReplayBoard("Your Board")
+        self.my_board.draw_ships(self.my_ships)
+        self.enemy_board.draw_ships(self.enemy_ships)
+
+
+
+        boards.addWidget(self.enemy_board)
+        boards.addWidget(self.my_board)
+        layout.addLayout(boards)
+
+        # ===== Info =====
+        self.replay_info = QLabel("Turn: -")
+        self.replay_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.replay_info.setFont(self.font_bold)
+        layout.addWidget(self.replay_info)
+
+        self.update_replay_buttons()
         return tab
+
+    def reset_replay(self):
+        self.enemy_board.reset()
+        self.my_board.reset()
+
+        if self.my_username == self.player1_username:
+            self.my_board.draw_ships(self.player1_ships)
+            self.enemy_board.draw_ships(self.player2_ships)
+        else:
+            self.my_board.draw_ships(self.player2_ships)
+            self.enemy_board.draw_ships(self.player1_ships)
+
+
+        self.replay_index = 0
+        self.replay_info.setText("Turn: -")
+
+
+
+    def apply_log(self, log):
+        r, c = log["row"], log["col"]
+        shooter = log["player_username"]
+
+        # Ai bắn → bắn vào board đối diện
+        target = (
+            self.enemy_board
+            if shooter == self.my_username
+            else self.my_board
+        )
+
+        if log["is_sunk"]:
+            target.mark_sunk(r, c)
+            result = "SUNK"
+        elif log["is_hit"]:
+            target.mark_hit(r, c)
+            result = "HIT"
+        else:
+            target.mark_miss(r, c)
+            result = "MISS"
+
+        self.replay_info.setText(
+            f"Turn {log['turn_number']} | {shooter} → ({r},{c}) : {result}"
+        )
+
+    def replay_next(self):
+        if self.replay_index >= len(self.replay_logs):
+            return
+
+        log = self.replay_logs[self.replay_index]
+        self.apply_log(log)
+        self.replay_index += 1
+        self.update_replay_buttons()
+
+    def replay_prev(self):
+        if self.replay_index <= 0:
+            return
+
+        self.replay_index -= 1
+
+        self.enemy_board.reset()
+        self.my_board.reset()
+
+        self.my_board.draw_ships(self.my_ships)
+        self.enemy_board.draw_ships(self.enemy_ships)
+
+
+
+        # ✅ APPLY LOGS TỚI TURN HIỆN TẠI
+        for i in range(self.replay_index):
+            self.apply_log(self.replay_logs[i])
+
+        self.update_replay_buttons()
+
+
+    def update_replay_buttons(self):
+        self.btn_prev.setEnabled(self.replay_index > 0)
+        self.btn_next.setEnabled(self.replay_index < len(self.replay_logs))
+
 
     def apply_style(self):
         self.setStyleSheet(f"""
