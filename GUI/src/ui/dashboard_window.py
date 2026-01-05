@@ -129,11 +129,11 @@ class DashboardWindow(QMainWindow):
         
         layout.addWidget(matchmaking)
         
-        # Active games section
-        games_label = QLabel("📋 Active Games")
-        games_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        games_label.setStyleSheet(f"color: {COLORS['primary']}; margin-top: 20px;")
-        layout.addWidget(games_label)
+        # # Active games section
+        # games_label = QLabel("📋 Active Games")
+        # games_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        # games_label.setStyleSheet(f"color: {COLORS['primary']}; margin-top: 20px;")
+        # layout.addWidget(games_label)
         
         self.games_list = QListWidget()
         self.games_list.setStyleSheet(f"""

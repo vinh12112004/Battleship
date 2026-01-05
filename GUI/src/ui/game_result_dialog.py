@@ -114,117 +114,72 @@ class GameResultDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def create_results_tab(self, you_won):
+        """Tạo tab kết quả (Đã xóa Duration và Stats thừa)"""
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setSpacing(20)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(40, 40, 40, 40) 
         
-        # 1. Match Info Grid
+        # --- KHUNG THÔNG TIN CHÍNH ---
         info_group = QFrame()
         info_group.setObjectName("StatsFrame")
         g_layout = QGridLayout(info_group)
-        g_layout.setVerticalSpacing(15)
-        g_layout.setContentsMargins(15, 15, 15, 15)
+        g_layout.setVerticalSpacing(20)
+        g_layout.setContentsMargins(20, 20, 20, 20)
         
-        # Helper row func
+        # Hàm hỗ trợ thêm dòng dữ liệu
         def add_row(row, label, value, color=None):
             l = QLabel(label)
             l.setFont(self.font_norm)
             l.setStyleSheet("color: #cbd5e1;")
-            l.setMinimumHeight(25)
+            l.setMinimumHeight(30)
             
             v = QLabel(str(value))
             v.setFont(self.font_bold)
-            v.setMinimumHeight(25)
-            if color: v.setStyleSheet(f"color: {color};")
+            v.setMinimumHeight(30)
+            if color: v.setStyleSheet(f"color: {color}; font-size: 16px;")
             
             g_layout.addWidget(l, row, 0)
             g_layout.addWidget(v, row, 1)
 
-        # ✅ KHỞI TẠO BIẾN ĐẾM DÒNG (QUAN TRỌNG)
         current_row = 0
 
-        # Row 1: Match ID
+        # 1. Match ID
         game_id = self.result.get('game_id', 'N/A')
-        add_row(current_row, "Match ID:", game_id[:8] + "..." if len(game_id) > 8 else game_id)
+        display_id = game_id[:8] + "..." if len(game_id) > 8 else game_id
+        add_row(current_row, "Match ID:", display_id)
         current_row += 1
         
-        # ✅ Row 2: END REASON (MỚI - Chỉ hiện nếu có lý do)
-        if self.reason:
-            add_row(current_row, "End Reason:", self.reason, "#facc15") # Màu vàng cảnh báo
-            current_row += 1
-        
-        # Row 3: Duration
-        raw_duration = self.result.get('game_duration', 0)
-        try:
-            dur_seconds = int(raw_duration)
-            mins, secs = divmod(dur_seconds, 60)
-            dur_str = f"{mins}m {secs}s"
-        except:
-            dur_str = "N/A"
-        add_row(current_row, "Duration:", dur_str)
+        # 2. Winner
+        winner_name = self.result.get('winner_username', 'Unknown')
+        add_row(current_row, "Winner:", winner_name, "#facc15" if winner_name == self.my_username else "#ef4444")
         current_row += 1
+
+        # [ĐÃ XÓA PHẦN DURATION Ở ĐÂY]
         
-        # Row 4: Total Turns
+        # 3. Total Turns
         add_row(current_row, "Total Turns:", self.result.get('total_turns', 0))
         current_row += 1
         
-        # Row 5: Winner ELO
+        # 4. Result Reason (Timeout/Normal)
+        if self.reason:
+             add_row(current_row, "Result:", self.reason, "#fbbf24")
+             current_row += 1
+
+        # 5. ELO Change
         w_old = self.result.get('winner_old_elo', 0)
         w_new = self.result.get('winner_new_elo', 0)
         w_diff = w_new - w_old
-        w_sign = "+" if w_diff >= 0 else ""
-        add_row(current_row, "Winner ELO:", f"{w_old} -> {w_new} ({w_sign}{w_diff})", "#4ade80")
-        current_row += 1
         
-        # Row 6: Loser ELO
-        l_old = self.result.get('loser_old_elo', 0)
-        l_new = self.result.get('loser_new_elo', 0)
-        l_diff = l_new - l_old
-        l_sign = "+" if l_diff >= 0 else ""
-        add_row(current_row, "Loser ELO:", f"{l_old} -> {l_new} ({l_sign}{l_diff})", "#ef4444")
-        current_row += 1
+        if w_diff != 0:
+            diff_str = f"+{w_diff}" if w_diff > 0 else str(w_diff)
+            add_row(current_row, "ELO Change:", f"{w_old} ➝ {w_new} ({diff_str})", "#4ade80")
+        else:
+            add_row(current_row, "ELO Rating:", f"{w_new} (Unranked/No change)")
 
         layout.addWidget(info_group)
         
-        # 2. Detailed Stats Table
-        stats_group = QFrame()
-        stats_group.setObjectName("StatsFrame")
-        s_layout = QGridLayout(stats_group)
-        s_layout.setVerticalSpacing(10)
-        
-        # Header Row
-        headers = ["Player", "Hits", "Misses", "Accuracy"]
-        for c, h in enumerate(headers):
-            lbl = QLabel(h)
-            lbl.setFont(self.font_bold)
-            lbl.setStyleSheet("color: #60a5fa; border-bottom: 1px solid #475569; padding-bottom: 8px;")
-            s_layout.addWidget(lbl, 0, c)
-            
-        # Data Rows
-        def add_stat_row(r, username, hits, misses, is_winner):
-            total = hits + misses
-            acc = (hits / total * 100) if total > 0 else 0.0
-            color = "#4ade80" if is_winner else "#ef4444"
-            
-            uname_lbl = QLabel(username)
-            uname_lbl.setStyleSheet(f"color: {color}; font-weight: bold;")
-            uname_lbl.setMinimumHeight(30)
-            s_layout.addWidget(uname_lbl, r, 0)
-            
-            s_layout.addWidget(QLabel(str(hits)), r, 1)
-            s_layout.addWidget(QLabel(str(misses)), r, 2)
-            s_layout.addWidget(QLabel(f"{acc:.1f}%"), r, 3)
-
-        add_stat_row(1, self.result.get('winner_username', 'Winner'), 
-                     self.result.get('winner_hits', 0), 
-                     self.result.get('winner_misses', 0), True)
-                     
-        add_stat_row(2, self.result.get('loser_username', 'Loser'), 
-                     self.result.get('loser_hits', 0), 
-                     self.result.get('loser_misses', 0), False)
-                     
-        layout.addWidget(stats_group)
+        # Đẩy nội dung lên trên
         layout.addStretch()
         return tab
 
