@@ -37,13 +37,15 @@ class TCPClientBridge:
         self.connected = False
         self.running = False
         self.recv_thread: Optional[threading.Thread] = None
+        self.ping_thread: Optional[threading.Thread] = None
         self.message_queue = queue.Queue()
         self.handlers: Dict[int, list] = {}
         self.token = ""
         self.lock = threading.Lock()
+        self.on_message(MessageType.MSG_PONG, self._handle_pong)
         logger.info("TCP Client Bridge initialized")
     
-    def connect(self, host: str = "127.0.0.1", port: int = 9090) -> bool:
+    def connect(self, host: str = "10.147.20.5", port: int = 9090) -> bool:
         """Connect to TCP server"""
         try:
             self.sockfd = self.lib.tcp_connect(host.encode(), port)
@@ -63,6 +65,9 @@ class TCPClientBridge:
             self.recv_thread = threading.Thread(target=self._receive_loop, daemon=True)
             self.recv_thread.start()
             
+            self.ping_thread = threading.Thread(target=self._ping_loop, daemon=True)
+            self.ping_thread.start()
+            
             logger.info(f"Connected to {host}:{port} (fd={self.sockfd})")
             return True
             
@@ -76,6 +81,9 @@ class TCPClientBridge:
         
         if self.recv_thread and self.recv_thread.is_alive():
             self.recv_thread.join(timeout=2.0)
+            
+        if self.ping_thread and self.ping_thread.is_alive():
+            self.ping_thread.join(timeout=2.0)
         
         if self.sockfd >= 0:
             self.lib.tcp_disconnect(self.sockfd)
@@ -110,6 +118,36 @@ class TCPClientBridge:
         except Exception as e:
             logger.error(f"Send error: {e}")
             return False
+        
+    def _ping_loop(self):
+        """Background thread to send PING every 30 seconds"""
+        logger.info("Ping thread started")
+        
+        while self.running: # Bỏ check self.connected ở vòng lặp ngoài để thread không chết hẳn nếu rớt mạng tạm thời
+            try:
+                time.sleep(30)  # Đợi 30 giây
+                
+                if not self.connected or self.sockfd < 0:
+                    continue # Nếu chưa kết nối thì đợi tiếp, không break
+                
+                # ✅ FIX: Truyền thêm self.token và payload=None
+                # Cấu trúc: TCPMessage(type, token, payload) hoặc dùng keyword arguments
+                ping_msg = TCPMessage(
+                    type=MessageType.MSG_PING, 
+                    token=self.token,  # Nên gửi kèm token để server biết ai đang ping
+                    payload=None       # BẮT BUỘC PHẢI CÓ
+                )
+                
+                if self.send_message(ping_msg):
+                    logger.debug("Sent PING to server")
+                else:
+                    logger.warning("Failed to send PING")
+                    
+            except Exception as e:
+                logger.error(f"Ping loop error: {e}")
+                time.sleep(1) # Nghỉ 1 chút nếu lỗi để tránh spam log
+        
+        logger.info("Ping thread stopped")
     
     def _receive_loop(self):
         """Background thread to receive messages"""
@@ -197,3 +235,6 @@ class TCPClientBridge:
                     logger.debug(f"Unregistered handler for {msg_type.name}")
                 else:
                     logger.warning(f"Handler not found for {msg_type.name} to remove")
+                    
+    def _handle_pong(self, payload):
+        logger.debug("✅ Received PONG. Network OK.")
