@@ -137,7 +137,8 @@ class GameResultDialog(QDialog):
             v = QLabel(str(value))
             v.setFont(self.font_bold)
             v.setMinimumHeight(30)
-            if color: v.setStyleSheet(f"color: {color}; font-size: 16px;")
+            if color:
+                v.setStyleSheet(f"color: {color}; font-size: 16px;")
             
             g_layout.addWidget(l, row, 0)
             g_layout.addWidget(v, row, 1)
@@ -152,34 +153,45 @@ class GameResultDialog(QDialog):
         
         # 2. Winner
         winner_name = self.result.get('winner_username', 'Unknown')
-        add_row(current_row, "Winner:", winner_name, "#facc15" if winner_name == self.my_username else "#ef4444")
+        add_row(
+            current_row,
+            "Winner:",
+            winner_name,
+            "#facc15" if winner_name == self.my_username else "#ef4444"
+        )
         current_row += 1
 
-        # [ĐÃ XÓA PHẦN DURATION Ở ĐÂY]
-        
-        # 3. Total Turns
-        add_row(current_row, "Total Turns:", self.result.get('total_turns', 0))
-        current_row += 1
-        
         # 4. Result Reason (Timeout/Normal)
         if self.reason:
-             add_row(current_row, "Result:", self.reason, "#fbbf24")
-             current_row += 1
+            add_row(current_row, "Result:", self.reason, "#fbbf24")
+            current_row += 1
 
-        # 5. ELO Change
-        w_old = self.result.get('winner_old_elo', 0)
-        w_new = self.result.get('winner_new_elo', 0)
-        w_diff = w_new - w_old
-        
-        if w_diff != 0:
-            diff_str = f"+{w_diff}" if w_diff > 0 else str(w_diff)
-            add_row(current_row, "ELO Change:", f"{w_old} ➝ {w_new} ({diff_str})", "#4ade80")
+        # 5. ELO Change (✅ luôn hiển thị ELO của bản thân)
+        if you_won:
+            my_old = self.result.get('winner_old_elo', None)
+            my_new = self.result.get('winner_new_elo', None)
         else:
-            add_row(current_row, "ELO Rating:", f"{w_new} (Unranked/No change)")
+            my_old = self.result.get('loser_old_elo', None)
+            my_new = self.result.get('loser_new_elo', None)
+
+        if isinstance(my_old, int) and isinstance(my_new, int):
+            diff = my_new - my_old
+            if diff != 0:
+                diff_str = f"+{diff}" if diff > 0 else str(diff)
+                diff_color = "#4ade80" if diff > 0 else "#ef4444"
+                add_row(current_row, "Your ELO Change:", f"{my_old} ➝ {my_new} ({diff_str})", diff_color)
+            else:
+                add_row(current_row, "Your ELO Rating:", f"{my_new} (No change)", "#9ca3af")
+        else:
+            add_row(current_row, "Your ELO:", "N/A", "#9ca3af")
+        current_row += 1
+
+        # Loser
+        loser_name = self.result.get('loser_username', 'Unknown')
+        add_row(current_row, "Loser:", loser_name, "#9ca3af")
+        current_row += 1
 
         layout.addWidget(info_group)
-        
-        # Đẩy nội dung lên trên
         layout.addStretch()
         return tab
 
